@@ -6,6 +6,8 @@ struct RootView: View {
 
     var body: some View {
         TabView {
+            PlaybackTestView()
+                .tabItem { Label("Play", systemImage: "play.rectangle") }
             ConnectionView()
                 .tabItem { Label("Connection", systemImage: "network") }
             LogView()

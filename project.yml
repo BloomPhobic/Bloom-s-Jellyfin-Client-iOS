@@ -8,8 +8,16 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.0.1"
+    MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  JellyfinAPI:
+    url: https://github.com/jellyfin/jellyfin-sdk-swift
+    exactVersion: 3.3.0
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit
+    exactVersion: 1.0.0
 
 targets:
   JellyfinClient:
@@ -17,6 +25,10 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    dependencies:
+      - package: JellyfinAPI
+      - package: MPVKit
+        product: MPVKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.bloomphobic.jellyfinclient

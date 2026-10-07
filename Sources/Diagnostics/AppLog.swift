@@ -24,10 +24,22 @@ final class AppLog {
     private(set) var entries: [Entry] = []
     private let maxEntries = 1000
 
+    /// Strings (like access tokens) that are replaced before anything is logged.
+    @ObservationIgnored private var secrets: Set<String> = []
+
     private init() {}
 
+    func addSecret(_ secret: String) {
+        guard !secret.isEmpty else { return }
+        secrets.insert(secret)
+    }
+
     func log(_ message: String, level: Entry.Level = .info) {
-        entries.append(Entry(date: Date(), level: level, message: message))
+        var text = message
+        for secret in secrets {
+            text = text.replacingOccurrences(of: secret, with: "<redacted>")
+        }
+        entries.append(Entry(date: Date(), level: level, message: text))
         if entries.count > maxEntries {
             entries.removeFirst(entries.count - maxEntries)
         }
@@ -48,11 +60,16 @@ final class AppLog {
 }
 
 enum AppInfo {
+    static var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    }
+
+    static var build: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+    }
+
     @MainActor
     static var versionDescription: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "Version \(version) (build \(build)), iOS \(UIDevice.current.systemVersion)"
+        "Version \(version) (build \(build)), iOS \(UIDevice.current.systemVersion)"
     }
 }
