@@ -76,8 +76,8 @@ struct PlayerView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
-                audioMenu
-                subtitleMenu
+                AudioTrackMenu(player: player)
+                SubtitleTrackMenu(player: player)
                 Button {
                     showStats.toggle()
                     if showStats {
@@ -148,51 +148,6 @@ struct PlayerView: View {
         )
     }
 
-    private var audioMenu: some View {
-        Menu {
-            ForEach(player.audioTracks) { track in
-                Button {
-                    player.selectAudio(track.id)
-                } label: {
-                    if track.isSelected {
-                        Label(track.title, systemImage: "checkmark")
-                    } else {
-                        Text(verbatim: track.title)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "speaker.wave.2")
-        }
-    }
-
-    private var subtitleMenu: some View {
-        Menu {
-            Button {
-                player.selectSubtitle(nil)
-            } label: {
-                if player.subtitleTracks.contains(where: { $0.isSelected }) {
-                    Text("Off")
-                } else {
-                    Label("Off", systemImage: "checkmark")
-                }
-            }
-            ForEach(player.subtitleTracks) { track in
-                Button {
-                    player.selectSubtitle(track.id)
-                } label: {
-                    if track.isSelected {
-                        Label(track.title, systemImage: "checkmark")
-                    } else {
-                        Text(verbatim: track.title)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "captions.bubble")
-        }
-    }
-
     private var statsPanel: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(player.stats.enumerated()), id: \.offset) { _, row in
@@ -243,5 +198,60 @@ struct PlayerView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, secs)
         }
         return String(format: "%d:%02d", minutes, secs)
+    }
+}
+
+/// Separate views so the menus only redraw when tracks change, not on every position update
+/// (redrawing an open menu makes it flicker).
+private struct AudioTrackMenu: View {
+    let player: MPVPlayer
+
+    var body: some View {
+        Menu {
+            ForEach(player.audioTracks) { track in
+                Button {
+                    player.selectAudio(track.id)
+                } label: {
+                    if track.isSelected {
+                        Label(track.title, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: track.title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "speaker.wave.2")
+        }
+    }
+}
+
+private struct SubtitleTrackMenu: View {
+    let player: MPVPlayer
+
+    var body: some View {
+        Menu {
+            Button {
+                player.selectSubtitle(nil)
+            } label: {
+                if player.subtitleTracks.contains(where: { $0.isSelected }) {
+                    Text("Off")
+                } else {
+                    Label("Off", systemImage: "checkmark")
+                }
+            }
+            ForEach(player.subtitleTracks) { track in
+                Button {
+                    player.selectSubtitle(track.id)
+                } label: {
+                    if track.isSelected {
+                        Label(track.title, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: track.title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "captions.bubble")
+        }
     }
 }

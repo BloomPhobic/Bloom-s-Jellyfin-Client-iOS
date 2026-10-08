@@ -27,6 +27,7 @@ final class MPVHostView: UIView {
         backgroundColor = .black
         videoLayer.framebufferOnly = true
         videoLayer.backgroundColor = UIColor.black.cgColor
+        videoLayer.contentsGravity = .resizeAspect
         layer.addSublayer(videoLayer)
     }
 
@@ -36,15 +37,24 @@ final class MPVHostView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        let scale = window?.screen.nativeScale ?? traitCollection.displayScale
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         videoLayer.frame = bounds
-        videoLayer.contentsScale = window?.screen.nativeScale ?? traitCollection.displayScale
+        videoLayer.contentsScale = scale
+        videoLayer.drawableSize = Self.fixedDrawableSize(screen: window?.screen, bounds: bounds, scale: scale)
         CATransaction.commit()
 
         if bounds.width > 1, bounds.height > 1, let start = onFirstLayout {
             onFirstLayout = nil
             start()
         }
+    }
+
+    /// mpv's MoltenVK output only reads the drawable size when video starts, so it never sees rotation.
+    /// Keep the drawable fixed at the screen's landscape size; in portrait, contentsGravity letterboxes it.
+    private static func fixedDrawableSize(screen: UIScreen?, bounds: CGRect, scale: CGFloat) -> CGSize {
+        let size = screen?.nativeBounds.size ?? CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        return CGSize(width: max(size.width, size.height), height: min(size.width, size.height))
     }
 }

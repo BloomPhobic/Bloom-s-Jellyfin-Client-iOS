@@ -111,10 +111,15 @@ final class MPVPlayer: PlaybackEngine {
 
     func refreshState() {
         guard let core else { return }
-        isPaused = core.flag("pause")
-        isBuffering = core.flag("paused-for-cache") || core.flag("seeking") || core.string("time-pos") == nil
-        position = core.double("time-pos") ?? position
-        duration = core.double("duration") ?? duration
+        // Only assign on change: every assignment notifies SwiftUI, even with the same value.
+        let paused = core.flag("pause")
+        let buffering = core.flag("paused-for-cache") || core.flag("seeking") || core.string("time-pos") == nil
+        let newPosition = core.double("time-pos") ?? position
+        let newDuration = core.double("duration") ?? duration
+        if paused != isPaused { isPaused = paused }
+        if buffering != isBuffering { isBuffering = buffering }
+        if newPosition != position { position = newPosition }
+        if newDuration != duration { duration = newDuration }
     }
 
     private func refreshTracks() {
@@ -137,8 +142,8 @@ final class MPVPlayer: PlaybackEngine {
                 subtitles.append(track)
             }
         }
-        audioTracks = audio
-        subtitleTracks = subtitles
+        if audio != audioTracks { audioTracks = audio }
+        if subtitles != subtitleTracks { subtitleTracks = subtitles }
     }
 
     func refreshStats() {

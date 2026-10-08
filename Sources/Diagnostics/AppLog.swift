@@ -22,7 +22,7 @@ final class AppLog {
     }
 
     private(set) var entries: [Entry] = []
-    private let maxEntries = 1000
+    private let maxEntries = 3000
 
     /// Strings (like access tokens) that are replaced before anything is logged.
     @ObservationIgnored private var secrets: Set<String> = []

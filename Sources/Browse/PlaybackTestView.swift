@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Phase 1 tab: sign in, search for a file, inspect it, play it.
 struct PlaybackTestView: View {
-    @State private var store = SessionStore()
+    @Environment(SessionStore.self) private var store
 
     var body: some View {
         NavigationStack {
