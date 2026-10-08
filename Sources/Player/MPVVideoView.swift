@@ -27,7 +27,6 @@ final class MPVHostView: UIView {
         backgroundColor = .black
         videoLayer.framebufferOnly = true
         videoLayer.backgroundColor = UIColor.black.cgColor
-        videoLayer.contentsGravity = .resizeAspect
         layer.addSublayer(videoLayer)
     }
 
@@ -40,9 +39,10 @@ final class MPVHostView: UIView {
         let scale = window?.screen.nativeScale ?? traitCollection.displayScale
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        videoLayer.frame = bounds
+        let drawableSize = Self.fixedDrawableSize(screen: window?.screen, bounds: bounds, scale: scale)
+        videoLayer.frame = Self.aspectFit(drawableSize, in: bounds)
         videoLayer.contentsScale = scale
-        videoLayer.drawableSize = Self.fixedDrawableSize(screen: window?.screen, bounds: bounds, scale: scale)
+        videoLayer.drawableSize = drawableSize
         CATransaction.commit()
 
         if bounds.width > 1, bounds.height > 1, let start = onFirstLayout {
@@ -52,9 +52,18 @@ final class MPVHostView: UIView {
     }
 
     /// mpv's MoltenVK output only reads the drawable size when video starts, so it never sees rotation.
-    /// Keep the drawable fixed at the screen's landscape size; in portrait, contentsGravity letterboxes it.
+    /// Keep the drawable fixed at the screen's landscape size, and keep the layer the same shape
+    /// (letterboxed in portrait) so the picture is scaled, never stretched.
     private static func fixedDrawableSize(screen: UIScreen?, bounds: CGRect, scale: CGFloat) -> CGSize {
         let size = screen?.nativeBounds.size ?? CGSize(width: bounds.width * scale, height: bounds.height * scale)
         return CGSize(width: max(size.width, size.height), height: min(size.width, size.height))
+    }
+
+    private static func aspectFit(_ size: CGSize, in rect: CGRect) -> CGRect {
+        guard size.width > 0, size.height > 0 else { return rect }
+        let factor = min(rect.width / size.width, rect.height / size.height)
+        let width = size.width * factor
+        let height = size.height * factor
+        return CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
     }
 }

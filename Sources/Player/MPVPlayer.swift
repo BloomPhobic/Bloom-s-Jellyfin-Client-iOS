@@ -23,6 +23,8 @@ final class MPVPlayer: PlaybackEngine {
     func start(url: URL) {
         guard core == nil else { return }
         configureAudioSession()
+        // MoltenVK sends PQ output but doesn't ask iOS for EDR (HDR) mode, so request it here.
+        layer.wantsExtendedDynamicRangeContent = PlayerSettings.hdrPassthrough
 
         let options: [(String, String)] = [
             ("vo", "gpu-next"),
