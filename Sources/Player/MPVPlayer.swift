@@ -168,7 +168,7 @@ final class MPVPlayer: PlaybackEngine {
             ("Format", "\(value("video-params/w"))x\(value("video-params/h")) \(value("video-params/pixelformat"))"),
             ("HW decode", value("hwdec-current")),
             ("Source color", "\(value("video-params/primaries")) / \(value("video-params/gamma")), peak \(value("video-params/sig-peak"))"),
-            ("Output color", "\(value("video-out-params/primaries")) / \(value("video-out-params/gamma"))"),
+            ("After filters", "\(value("video-out-params/primaries")) / \(value("video-out-params/gamma"))"),
             ("EDR", String(format: "headroom %.2f (max %.2f), layer %@", screen.currentEDRHeadroom, screen.potentialEDRHeadroom, layer.wantsExtendedDynamicRangeContent ? "on" : "off")),
             ("FPS", "\(value("container-fps")) → \(value("estimated-vf-fps"))"),
             ("Dropped", "decoder \(value("decoder-frame-drop-count")), output \(value("frame-drop-count"))"),

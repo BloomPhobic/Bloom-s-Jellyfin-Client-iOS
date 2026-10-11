@@ -40,7 +40,16 @@ final class MPVHostView: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let drawableSize = Self.fixedDrawableSize(screen: window?.screen, bounds: bounds, scale: scale)
-        videoLayer.frame = Self.aspectFit(drawableSize, in: bounds)
+        // Keep the layer's own bounds at the landscape size and shrink it with a transform instead.
+        // MoltenVK rebuilds its swapchain at bounds × contentsScale, so changing the bounds makes mpv
+        // draw its old full-size picture into a smaller buffer, and only the top-left corner shows.
+        let layerSize = CGSize(width: drawableSize.width / scale, height: drawableSize.height / scale)
+        let fitted = Self.aspectFit(drawableSize, in: bounds)
+        let factor = layerSize.width > 0 ? fitted.width / layerSize.width : 1
+        videoLayer.transform = CATransform3DIdentity
+        videoLayer.bounds = CGRect(origin: .zero, size: layerSize)
+        videoLayer.position = CGPoint(x: fitted.midX, y: fitted.midY)
+        videoLayer.transform = CATransform3DMakeScale(factor, factor, 1)
         videoLayer.contentsScale = scale
         videoLayer.drawableSize = drawableSize
         CATransaction.commit()
