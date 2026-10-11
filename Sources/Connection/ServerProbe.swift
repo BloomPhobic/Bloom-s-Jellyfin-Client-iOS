@@ -2,7 +2,7 @@ import Foundation
 
 struct ProbeResult: Sendable {
     enum Outcome: Sendable {
-        case reachable(serverName: String, version: String, milliseconds: Int)
+        case reachable(serverID: String?, serverName: String, version: String, milliseconds: Int)
         case failed(String)
     }
 
@@ -18,10 +18,12 @@ struct ProbeResult: Sendable {
 /// Checks whether Jellyfin servers answer, using the unauthenticated /System/Info/Public endpoint.
 enum ServerProbe {
     private struct PublicInfo: Decodable {
+        let id: String?
         let serverName: String?
         let version: String?
 
         enum CodingKeys: String, CodingKey {
+            case id = "Id"
             case serverName = "ServerName"
             case version = "Version"
         }
@@ -87,6 +89,7 @@ enum ServerProbe {
             return ProbeResult(
                 address: address,
                 outcome: .reachable(
+                    serverID: info.id,
                     serverName: info.serverName ?? "?",
                     version: info.version ?? "?",
                     milliseconds: milliseconds

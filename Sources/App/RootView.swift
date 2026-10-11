@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct RootView: View {
+    @Environment(SessionStore.self) private var store
     @State private var didRunStartupChecks = false
 
     var body: some View {
@@ -18,6 +19,7 @@ struct RootView: View {
             didRunStartupChecks = true
             logStartupInfo()
             KeychainCheck.run()
+            await store.start()
         }
     }
 

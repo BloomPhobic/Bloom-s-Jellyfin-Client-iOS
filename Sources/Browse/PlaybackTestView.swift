@@ -1,18 +1,29 @@
 import JellyfinAPI
 import SwiftUI
 
-/// Phase 1 tab: sign in, search for a file, inspect it, play it.
+/// Play tab: add a server, connect, sign in, then search for a file, inspect it, and play it.
 struct PlaybackTestView: View {
     @Environment(SessionStore.self) private var store
 
     var body: some View {
         NavigationStack {
-            if let client = store.client, let session = store.session {
+            if store.server == nil {
+                AddServerView()
+            } else if store.route == nil {
+                if store.hasResolved && !store.isResolving {
+                    ServerUnreachableView()
+                } else {
+                    ConnectingView()
+                }
+            } else if let client = store.client, let session = store.session {
                 SearchView(client: client, userID: session.userID)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Menu {
-                                Text("\(session.userName) @ \(session.serverURL.host() ?? "")")
+                                Text("\(session.userName) @ \(store.server?.name ?? "")")
+                                if let route = store.route {
+                                    Label(route.kind.label, systemImage: route.kind.systemImage)
+                                }
                                 Button("Sign out", role: .destructive) {
                                     Task { await store.signOut() }
                                 }
@@ -22,7 +33,7 @@ struct PlaybackTestView: View {
                         }
                     }
             } else {
-                LoginView(store: store)
+                LoginView()
             }
         }
     }

@@ -1,54 +1,31 @@
 import SwiftUI
 
+/// Server settings: the server's addresses in priority order, which one is in use, and the account.
 struct ConnectionView: View {
-    @State private var model = ConnectionCheckModel()
+    @Environment(SessionStore.self) private var store
+
+    @State private var newAddress = ""
+    @State private var addMessage: (text: String, isError: Bool)?
+    @State private var isAdding = false
+    @State private var confirmForget = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    ForEach(model.addresses, id: \.self) { address in
-                        AddressRow(
-                            address: address,
-                            result: model.results[address],
-                            isChosen: model.chosenAddress == address
-                        )
-                    }
-                    .onDelete { model.remove(at: $0) }
-                    .onMove { model.move(from: $0, to: $1) }
-
-                    HStack {
-                        TextField("http://192.168.1.10:8096", text: $model.newAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                            .onSubmit { model.addAddress() }
-                        Button("Add") { model.addAddress() }
-                            .disabled(model.newAddress.isEmpty)
-                    }
-                } header: {
-                    Text("Server addresses")
-                } footer: {
-                    if let inputError = model.inputError {
-                        Text(inputError).foregroundStyle(.red)
-                    } else {
-                        Text("All addresses are tried at the same time. The first one in this list that answers is used. Tap Edit to reorder.")
-                    }
-                }
-
-                Section {
-                    Button {
-                        Task { await model.check() }
-                    } label: {
-                        HStack {
-                            Text("Check reachability")
-                            if model.isChecking {
-                                Spacer()
-                                ProgressView()
-                            }
+                if let server = store.server {
+                    serverSection(name: server.name)
+                    addressSection(server.addresses)
+                    accountSection
+                    Section {
+                        Button("Forget this server", role: .destructive) {
+                            confirmForget = true
                         }
                     }
-                    .disabled(model.isChecking || model.addresses.isEmpty)
+                } else {
+                    Section {
+                        Text("No server added yet. Add one on the Play tab.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Self-tests") {
@@ -58,19 +35,128 @@ struct ConnectionView: View {
                 }
             }
             .navigationTitle("Connection")
-            .toolbar { EditButton() }
+            .toolbar {
+                if store.server != nil {
+                    EditButton()
+                }
+            }
+            .confirmationDialog("Forget this server?", isPresented: $confirmForget, titleVisibility: .visible) {
+                Button("Sign out and forget", role: .destructive) {
+                    Task { await store.forgetServer() }
+                }
+            } message: {
+                Text("This removes all of its addresses and signs you out.")
+            }
+        }
+    }
+
+    private func serverSection(name: String) -> some View {
+        Section("Server") {
+            LabeledContent("Name", value: name)
+            LabeledContent("In use") {
+                if let route = store.route {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Label(route.kind.label, systemImage: route.kind.systemImage)
+                        Text("\(route.milliseconds) ms")
+                            .font(.caption)
+                    }
+                } else {
+                    Text("Not connected")
+                }
+            }
+            Button {
+                Task { await store.resolve() }
+            } label: {
+                HStack {
+                    Text("Check addresses now")
+                    if store.isResolving {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(store.isResolving)
+        }
+    }
+
+    private func addressSection(_ addresses: [String]) -> some View {
+        Section {
+            ForEach(addresses, id: \.self) { address in
+                AddressRow(
+                    address: address,
+                    result: store.results[address],
+                    isChosen: store.route?.address == address
+                )
+            }
+            .onDelete { store.removeAddresses(at: $0) }
+            .onMove { store.moveAddresses(from: $0, to: $1) }
+            .deleteDisabled(addresses.count < 2)
+
+            HStack {
+                TextField("http://192.168.1.10:8096", text: $newAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .onSubmit { Task { await add() } }
+                if isAdding {
+                    ProgressView()
+                } else {
+                    Button("Add") { Task { await add() } }
+                        .disabled(newAddress.isEmpty)
+                }
+            }
+        } header: {
+            Text("Addresses")
+        } footer: {
+            if let addMessage {
+                Text(addMessage.text)
+                    .foregroundStyle(addMessage.isError ? Color.red : Color.secondary)
+            } else {
+                Text("All addresses are checked at the same time, and the first one in this list that answers is used. New addresses are placed local network first, then Tailscale, then internet. Tap Edit to reorder.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var accountSection: some View {
+        Section("Account") {
+            if let session = store.session {
+                LabeledContent("Signed in as", value: session.userName)
+                Button("Sign out", role: .destructive) {
+                    Task { await store.signOut() }
+                }
+            } else {
+                Text("Not signed in")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func add() async {
+        guard !isAdding, !newAddress.isEmpty else { return }
+        isAdding = true
+        defer { isAdding = false }
+        let outcome = await store.addAddress(newAddress)
+        addMessage = (outcome.message, outcome.isError)
+        if !outcome.isError {
+            newAddress = ""
         }
     }
 }
 
-private struct AddressRow: View {
+/// One server address with its type and the result of the last check.
+struct AddressRow: View {
     let address: String
     let result: ProbeResult?
     let isChosen: Bool
 
     var body: some View {
+        let kind = AddressKind.of(address)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
+                Image(systemName: kind.systemImage)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
                 Text(address)
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1)
@@ -83,15 +169,19 @@ private struct AddressRow: View {
             }
             if let result {
                 switch result.outcome {
-                case .reachable(let name, let version, let ms):
-                    Text("\(name) · \(version) · \(ms) ms")
+                case .reachable(_, _, let version, let ms):
+                    Text("\(kind.label) · server \(version) · \(ms) ms")
                         .font(.caption)
                         .foregroundStyle(.green)
                 case .failed(let reason):
-                    Text(reason)
+                    Text("\(kind.label) · \(reason)")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+            } else {
+                Text("\(kind.label) · not checked")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
