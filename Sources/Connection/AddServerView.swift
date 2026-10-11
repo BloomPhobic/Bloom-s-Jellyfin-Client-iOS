@@ -11,7 +11,7 @@ struct AddServerView: View {
     var body: some View {
         Form {
             Section {
-                TextField("https://jellyfin.example.com", text: $address)
+                TextField("Server address", text: $address, prompt: Text(verbatim: "https://jellyfin.example.com"))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)

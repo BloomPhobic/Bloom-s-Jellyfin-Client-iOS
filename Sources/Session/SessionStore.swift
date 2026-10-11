@@ -51,6 +51,7 @@ final class SessionStore {
 
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var resolveAgain = false
+    @ObservationIgnored private var checkGeneration = 0
     @ObservationIgnored private var sessionChecked = false
     @ObservationIgnored private var pathMonitor: NWPathMonitor?
     @ObservationIgnored private var pathSignature: String?
@@ -79,6 +80,7 @@ final class SessionStore {
             return
         }
         isResolving = true
+        checkGeneration += 1
         let log = AppLog.shared
         log.log("Checking \(addresses.count) address(es)…")
 
@@ -89,16 +91,7 @@ final class SessionStore {
 
         results = Dictionary(resolution.results.map { ($0.address, $0) }, uniquingKeysWith: { first, _ in first })
         for result in resolution.results {
-            switch result.outcome {
-            case .reachable(_, let name, let version, let ms):
-                log.log("OK \(result.address): \"\(name)\", server \(version), \(ms) ms")
-            case .failed(let reason):
-                log.log("FAIL \(result.address): \(reason)", level: .warning)
-            }
-        }
-        let skipped = addresses.count - resolution.results.count
-        if skipped > 0 {
-            log.log("Not waiting for \(skipped) lower-priority address(es)")
+            Self.log(result)
         }
 
         if let chosen = resolution.chosen, let ms = chosen.milliseconds {
@@ -118,9 +111,51 @@ final class SessionStore {
             log.log("No address answered.", level: .error)
         }
 
+        // Addresses that were still being checked when the choice was made: finish them in the background,
+        // so the list shows a real result for each, and switch if a higher-priority one was just slow.
+        let unfinished = addresses.filter { results[$0] == nil }
+        if !unfinished.isEmpty {
+            log.log("Finishing \(unfinished.count) check(s) in the background")
+            finishChecks(unfinished)
+        }
+
         if resolveAgain {
             resolveAgain = false
             await resolve()
+        }
+    }
+
+    private func finishChecks(_ addresses: [String]) {
+        let generation = checkGeneration
+        let serverID = server?.id
+        Task {
+            let found = await ServerProbe.probeAll(addresses)
+            // A newer check started meanwhile; its results win.
+            guard generation == checkGeneration, server != nil else { return }
+            for probe in found {
+                let result = AddressResolver.check(probe, serverID: serverID)
+                results[result.address] = result
+                Self.log(result)
+            }
+
+            guard let order = server?.addresses,
+                  let current = route,
+                  let currentIndex = order.firstIndex(of: current.address) else { return }
+            let higher = order.prefix(currentIndex).compactMap { results[$0] }
+            guard let better = higher.first(where: { $0.isReachable }), let ms = better.milliseconds else { return }
+            let newRoute = Route(address: better.address, milliseconds: ms)
+            AppLog.shared.log("Switching to \(newRoute.kind.label): \(newRoute.address) (answered after the first choice, \(ms) ms)")
+            route = newRoute
+            rebuildClient()
+        }
+    }
+
+    private static func log(_ result: ProbeResult) {
+        switch result.outcome {
+        case .reachable(_, let name, let version, let ms):
+            AppLog.shared.log("OK \(result.address): \"\(name)\", server \(version), \(ms) ms")
+        case .failed(let reason):
+            AppLog.shared.log("FAIL \(result.address): \(reason)", level: .warning)
         }
     }
 

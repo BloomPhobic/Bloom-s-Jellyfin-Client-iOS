@@ -73,7 +73,7 @@ enum AddressResolver {
     }
 
     /// Treats an answer from a different Jellyfin server as a failure.
-    private static func check(_ result: ProbeResult, serverID: String?) -> ProbeResult {
+    static func check(_ result: ProbeResult, serverID: String?) -> ProbeResult {
         guard let serverID,
               case .reachable(let foundID, let name, _, _) = result.outcome,
               let foundID, foundID != serverID else {

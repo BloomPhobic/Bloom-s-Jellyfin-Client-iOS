@@ -93,7 +93,7 @@ struct ConnectionView: View {
             .deleteDisabled(addresses.count < 2)
 
             HStack {
-                TextField("http://192.168.1.10:8096", text: $newAddress)
+                TextField("New address", text: $newAddress, prompt: Text(verbatim: "http://192.168.1.10:8096"))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)

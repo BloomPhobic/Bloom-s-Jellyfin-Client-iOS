@@ -96,11 +96,24 @@ enum ServerProbe {
                 )
             )
         } catch let error as URLError {
-            return ProbeResult(address: address, outcome: .failed("\(error.localizedDescription) (URLError \(error.code.rawValue))"))
+            return ProbeResult(address: address, outcome: .failed(describe(error)))
         } catch is DecodingError {
             return ProbeResult(address: address, outcome: .failed("Answered, but not with Jellyfin server info"))
         } catch {
             return ProbeResult(address: address, outcome: .failed(error.localizedDescription))
         }
+    }
+
+    /// iOS reports a blocked Local Network permission as "offline" (-1009); the real reason is in the network path.
+    private static func describe(_ error: URLError) -> String {
+        let path = (error as NSError).userInfo["_NSURLErrorNWPathKey"].map { "\($0)" } ?? ""
+        if path.localizedCaseInsensitiveContains("local network prohibited") {
+            return "Local Network access is off. Turn it on in Settings → Privacy & Security → Local Network (for LiveContainer if the app runs inside it)."
+        }
+        var text = "\(error.localizedDescription) (URLError \(error.code.rawValue))"
+        if !path.isEmpty, error.code == .notConnectedToInternet {
+            text += " [path: \(path)]"
+        }
+        return text
     }
 }
