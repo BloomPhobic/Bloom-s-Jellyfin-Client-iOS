@@ -25,6 +25,9 @@ struct LibraryView: View {
 
     var body: some View {
         ScrollView {
+            if query != LibraryQuery() {
+                activeOptions
+            }
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(items, id: \.id) { item in
                     NavigationLink(value: BrowseRoute.item(item)) {
@@ -67,6 +70,33 @@ struct LibraryView: View {
             loadedQuery = query
             query.save(for: parent.id)
             await reload()
+        }
+    }
+
+    /// Chips for every non-default option, each removable, plus Reset. Shown above the grid.
+    private var activeOptions: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if query.sort != .name || !query.ascending {
+                    OptionChip(title: "\(query.sort.label) \(query.ascending ? "↑" : "↓")") {
+                        query.sort = .name
+                        query.ascending = true
+                    }
+                }
+                if query.unplayedOnly {
+                    OptionChip(title: "Unplayed") { query.unplayedOnly = false }
+                }
+                if query.favouritesOnly {
+                    OptionChip(title: "Favourites") { query.favouritesOnly = false }
+                }
+                Button("Reset") {
+                    query = LibraryQuery()
+                }
+                .font(.subheadline.weight(.semibold))
+                .padding(.leading, 4)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
         }
     }
 
@@ -134,5 +164,28 @@ struct LibraryView: View {
             }
         }
         isLoading = false
+    }
+}
+
+/// A removable option, like "Unplayed ✕".
+private struct OptionChip: View {
+    let title: String
+    let remove: () -> Void
+
+    var body: some View {
+        Button(action: remove) {
+            HStack(spacing: 4) {
+                Text(title)
+                Image(systemName: "xmark")
+                    .font(.caption2.bold())
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+            .foregroundStyle(Color.accentColor)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Remove \(title)")
     }
 }

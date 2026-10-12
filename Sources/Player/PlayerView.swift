@@ -43,6 +43,9 @@ struct PlayerView: View {
         .task {
             while !Task.isCancelled {
                 player.refreshState()
+                if player.duration > 0 && !player.isBuffering {
+                    request.reporter?.update(position: player.position, isPaused: player.isPaused)
+                }
                 if showStats {
                     player.refreshStats()
                 }
@@ -60,6 +63,7 @@ struct PlayerView: View {
             }
         }
         .onDisappear {
+            request.reporter?.stop()
             player.stop()
         }
     }
@@ -184,6 +188,7 @@ struct PlayerView: View {
     }
 
     private func close() {
+        request.reporter?.stop()
         player.stop()
         dismiss()
     }

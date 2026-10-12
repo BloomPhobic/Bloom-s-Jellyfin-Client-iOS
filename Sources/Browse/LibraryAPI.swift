@@ -214,8 +214,12 @@ struct ImageRef: Hashable {
 
 /// Picks the best image for each kind of card.
 enum Artwork {
-    /// Portrait poster (2:3). Seasons and episodes fall back to the show's poster.
+    /// Portrait poster (2:3). Seasons fall back to the show's poster. Episodes always use the show's
+    /// poster, because an episode's own image is a wide still that looks wrong cropped to a poster.
     static func poster(_ item: BaseItemDto) -> ImageRef? {
+        if item.type == .episode, let id = item.seriesID, let tag = item.seriesPrimaryImageTag {
+            return ImageRef(itemID: id, type: .primary, tag: tag)
+        }
         if let id = item.id, let tag = item.imageTags?[ImageType.primary.rawValue] {
             return ImageRef(itemID: id, type: .primary, tag: tag)
         }

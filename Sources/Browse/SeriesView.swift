@@ -77,6 +77,9 @@ struct SeriesView: View {
             guard series == nil else { return }
             await loadSeries()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
+            Task { await reloadAfterChange() }
+        }
         .task(id: selectedSeasonID) {
             guard let selectedSeasonID, selectedSeasonID != loadedSeasonID else { return }
             await loadEpisodes(seasonID: selectedSeasonID)

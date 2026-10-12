@@ -6,6 +6,8 @@ struct PlaybackRequest: Identifiable {
     let url: URL
     let title: String
     var startSeconds: Double = 0
+    /// Sends progress to the server; nil for test playback.
+    var reporter: PlaybackReporter?
 }
 
 /// A movie, episode or video: artwork, details, Play/Resume, and watched and favourite toggles.
@@ -13,6 +15,7 @@ struct ItemDetailView: View {
     let api: LibraryAPI
     let itemID: String
 
+    @Environment(BrowseNavigator.self) private var navigator
     @State private var item: BaseItemDto?
     @State private var errorMessage: String?
     @State private var playback: PlaybackRequest?
@@ -39,7 +42,9 @@ struct ItemDetailView: View {
 
                 if item.type == .episode, let seriesID = item.seriesID {
                     Section {
-                        NavigationLink(value: BrowseRoute.item(Self.seriesLink(id: seriesID, name: item.seriesName))) {
+                        Button {
+                            navigator.openSeries(id: seriesID, name: item.seriesName)
+                        } label: {
                             Label("Go to \(item.seriesName ?? "show")", systemImage: "tv")
                         }
                     }
@@ -80,6 +85,10 @@ struct ItemDetailView: View {
             }
         }
         .task { await load() }
+        .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
+            // Show the new resume position and watched state.
+            Task { await reload() }
+        }
         .fullScreenCover(item: $playback) { request in
             PlayerView(request: request)
         }
@@ -93,15 +102,22 @@ struct ItemDetailView: View {
                 Button {
                     play(item: item, source: source, from: resume)
                 } label: {
-                    Label(resume > 0 ? "Resume \(Self.timeText(resume))" : "Play", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
+                    // An explicit HStack: inside a list, Label hides its icon but keeps its space, which pushed the text off-centre.
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.fill")
+                        Text(resume > 0 ? "Resume \(Self.timeText(resume))" : "Play")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 if resume > 0 {
                     Button {
                         play(item: item, source: source, from: 0)
                     } label: {
-                        Label("From start", systemImage: "backward.end.fill")
+                        HStack(spacing: 6) {
+                            Image(systemName: "backward.end.fill")
+                            Text("From start")
+                        }
                     }
                     .buttonStyle(.bordered)
                 }
@@ -110,6 +126,12 @@ struct ItemDetailView: View {
         } else {
             Text("No playable file.")
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private func reload() async {
+        if let fresh = try? await api.item(itemID) {
+            item = fresh
         }
     }
 
@@ -135,16 +157,12 @@ struct ItemDetailView: View {
             log.log("  \(line)")
         }
         log.log("  Options: HDR passthrough \(PlayerSettings.hdrPassthrough ? "on" : "off"), hardware decoding \(PlayerSettings.hardwareDecoding ? "on" : "off")")
-        playback = PlaybackRequest(url: url, title: item.name ?? "", startSeconds: startSeconds)
-    }
-
-    /// Enough of a show for navigation; the show page loads the rest.
-    private static func seriesLink(id: String, name: String?) -> BaseItemDto {
-        var series = BaseItemDto()
-        series.id = id
-        series.name = name
-        series.type = .series
-        return series
+        playback = PlaybackRequest(
+            url: url,
+            title: item.name ?? "",
+            startSeconds: startSeconds,
+            reporter: PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
+        )
     }
 
     static func timeText(_ seconds: Double) -> String {
@@ -224,22 +242,34 @@ struct UserDataButtons: View {
     @State private var isUpdating = false
 
     var body: some View {
+        // Two equal halves, so the buttons keep their size when the text changes.
         HStack(spacing: 12) {
             Button {
                 Task { await update(played: !item.isPlayed) }
             } label: {
-                Label(item.isPlayed ? "Watched" : "Mark watched",
-                      systemImage: item.isPlayed ? "checkmark.circle.fill" : "checkmark.circle")
+                toggleLabel(item.isPlayed ? "Watched" : "Mark watched",
+                            systemImage: item.isPlayed ? "checkmark.circle.fill" : "checkmark.circle")
             }
             Button {
                 Task { await update(favorite: !item.isFavorite) }
             } label: {
-                Label(item.isFavorite ? "Favourite" : "Add to favourites",
-                      systemImage: item.isFavorite ? "heart.fill" : "heart")
+                toggleLabel(item.isFavorite ? "Favourite" : "Add to favourites",
+                            systemImage: item.isFavorite ? "heart.fill" : "heart")
             }
         }
         .buttonStyle(.bordered)
         .disabled(isUpdating)
+    }
+
+    private func toggleLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity)
     }
 
     private func update(played: Bool? = nil, favorite: Bool? = nil) async {

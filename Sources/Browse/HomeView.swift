@@ -32,6 +32,29 @@ struct BrowseDestination: View {
     }
 }
 
+/// The pages open in one tab. Lets "Go to show" return to a show page that is already open
+/// instead of stacking another copy on top.
+@MainActor
+@Observable
+final class BrowseNavigator {
+    var path: [BrowseRoute] = []
+
+    func openSeries(id: String, name: String?) {
+        if let index = path.lastIndex(where: { route in
+            if case .item(let item) = route { return item.type == .series && item.id == id }
+            return false
+        }) {
+            path.removeLast(path.count - index - 1)
+            return
+        }
+        var series = BaseItemDto()
+        series.id = id
+        series.name = name
+        series.type = .series
+        path.append(.item(series))
+    }
+}
+
 extension View {
     func browseDestinations(api: LibraryAPI) -> some View {
         navigationDestination(for: BrowseRoute.self) { route in
@@ -87,6 +110,9 @@ struct HomeView: View {
                     }
                     .padding(.horizontal)
                 }
+                if !libraries.isEmpty {
+                    librariesRow
+                }
                 if !resume.isEmpty {
                     row("Continue watching", items: resume, wide: true)
                 }
@@ -98,9 +124,6 @@ struct HomeView: View {
                         row("Recently added in \(library.name ?? "library")", items: items, wide: false)
                     }
                 }
-                if !libraries.isEmpty {
-                    librariesRow
-                }
                 if lastLoaded == nil && errorMessage == nil {
                     ProgressView()
                         .frame(maxWidth: .infinity)
@@ -111,6 +134,10 @@ struct HomeView: View {
         }
         .navigationTitle(store.server?.name ?? "Home")
         .refreshable { await load() }
+        .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
+            // Reload the next time Home is shown.
+            lastLoaded = .distantPast
+        }
         .task {
             // Reload when coming back to Home, but not on every tab switch.
             if lastLoaded.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
