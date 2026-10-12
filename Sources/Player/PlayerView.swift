@@ -11,8 +11,7 @@ struct PlayerView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showControls = true
     @State private var showStats = false
-    @State private var showSubtitleOptions = false
-    @State private var showEpisodes = false
+    @State private var panel: PlayerPanel?
     @State private var scrubPosition: Double?
 
     private var player: MPVPlayer { session.player }
@@ -42,6 +41,7 @@ struct PlayerView: View {
             }
             // Skip and next-episode stay visible even when the controls are hidden.
             cornerActions
+            panelLayer
             if let error = player.errorMessage {
                 errorPanel(error)
             }
@@ -79,16 +79,6 @@ struct PlayerView: View {
         .onDisappear {
             session.close()
         }
-        .sheet(isPresented: $showSubtitleOptions) {
-            SubtitleOptionsView(player: player)
-                .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $showEpisodes) {
-            EpisodePickerView(session: session) {
-                showEpisodes = false
-            }
-            .presentationDetents([.medium, .large])
-        }
     }
 
     private var controls: some View {
@@ -105,17 +95,18 @@ struct PlayerView: View {
                 Spacer()
                 if session.isEpisode {
                     Button {
-                        showEpisodes = true
+                        toggle(.episodes)
                     } label: {
-                        Image(systemName: "rectangle.stack")
+                        Image(systemName: panel == .episodes ? "rectangle.stack.fill" : "rectangle.stack")
                     }
                 }
                 AudioTrackMenu(player: player)
                 SubtitleTrackMenu(player: player)
                 Button {
-                    showSubtitleOptions = true
+                    toggle(.subtitles)
                 } label: {
                     Image(systemName: "textformat.size")
+                        .symbolVariant(panel == .subtitles ? .circle.fill : .none)
                 }
                 Button {
                     showStats.toggle()
@@ -130,6 +121,27 @@ struct PlayerView: View {
 
             Spacer()
 
+            if panel == nil {
+                transport
+            }
+        }
+        .padding()
+        .foregroundStyle(.white)
+        .tint(.white)
+        .background(
+            LinearGradient(
+                colors: [.black.opacity(0.6), .clear, .clear, .black.opacity(0.6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        )
+    }
+
+    /// Play/pause, ±10 s and the seek bar. Hidden while a side panel is open.
+    private var transport: some View {
+        Group {
             HStack(spacing: 56) {
                 Button {
                     player.seek(by: -10)
@@ -173,18 +185,60 @@ struct PlayerView: View {
                 .font(.caption.monospacedDigit())
             }
         }
-        .padding()
-        .foregroundStyle(.white)
-        .tint(.white)
-        .background(
-            LinearGradient(
-                colors: [.black.opacity(0.6), .clear, .clear, .black.opacity(0.6)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        )
+    }
+
+    private func toggle(_ newPanel: PlayerPanel) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            panel = panel == newPanel ? nil : newPanel
+            if panel != nil {
+                showControls = true
+            }
+        }
+    }
+
+    /// Episodes or subtitle options: on the right in landscape (the video stays visible), from the
+    /// bottom in portrait. Tapping outside closes it; the top bar stays usable to switch panels.
+    @ViewBuilder
+    private var panelLayer: some View {
+        if let panel {
+            GeometryReader { proxy in
+                let landscape = proxy.size.width > proxy.size.height
+                VStack(spacing: 0) {
+                    // Leave the top bar uncovered.
+                    Color.clear
+                        .frame(height: 56)
+                        .allowsHitTesting(false)
+                    ZStack(alignment: landscape ? .trailing : .bottom) {
+                        Color.black.opacity(0.2)
+                            .contentShape(Rectangle())
+                            .onTapGesture { toggle(panel) }
+                        panelContent(panel)
+                            .frame(width: landscape ? min(420, proxy.size.width * 0.45) : nil,
+                                   height: landscape ? nil : proxy.size.height * 0.6)
+                            .frame(maxWidth: landscape ? nil : .infinity, maxHeight: landscape ? .infinity : nil)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .padding(8)
+                            .transition(.move(edge: landscape ? .trailing : .bottom).combined(with: .opacity))
+                    }
+                }
+            }
+            .environment(\.colorScheme, .dark)
+        }
+    }
+
+    @ViewBuilder
+    private func panelContent(_ panel: PlayerPanel) -> some View {
+        switch panel {
+        case .episodes:
+            EpisodePickerView(session: session) {
+                toggle(.episodes)
+            }
+        case .subtitles:
+            SubtitleOptionsView(player: player) {
+                toggle(.subtitles)
+            }
+        }
     }
 
     /// Bottom-right: the next-episode card, or a skip button during a marked segment.
@@ -277,9 +331,12 @@ private struct NextEpisodeCard: View {
             ArtworkFrame(url: session.api.imageURL(Artwork.landscape(next), maxWidth: 400), aspectRatio: 16 / 9)
                 .frame(width: 130)
             VStack(alignment: .leading, spacing: 6) {
-                Text(countdownText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+                // Redraws on its own clock; nothing else on the card changes while counting down.
+                TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                    Text(countdownText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
                 Text([next.episodeLabel, next.name].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
@@ -308,7 +365,6 @@ private struct NextEpisodeCard: View {
     }
 
     private var countdownText: String {
-        // TimelineView isn't needed: the player's half-second tick already redraws this.
         guard let end = session.countdownEnd else { return "UP NEXT" }
         let seconds = max(0, Int(end.timeIntervalSinceNow.rounded(.up)))
         return "UP NEXT IN \(seconds)"
@@ -317,15 +373,48 @@ private struct NextEpisodeCard: View {
 
 /// Subtitle size, style, boldness and timing. Size, style and bold are remembered; the timing
 /// offset is for the current session only.
+private enum PlayerPanel {
+    case episodes
+    case subtitles
+}
+
+/// Title row for a player panel, with a close button.
+private struct PanelHeader<Trailing: View>: View {
+    let title: String
+    let close: () -> Void
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+            Spacer()
+            trailing
+            Button(action: close) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+        .padding(.horizontal)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+    }
+}
+
 private struct SubtitleOptionsView: View {
     let player: MPVPlayer
+    let close: () -> Void
 
     @AppStorage(SubtitleSettings.sizeKey) private var size = SubtitleSettings.Size.medium.rawValue
     @AppStorage(SubtitleSettings.styleKey) private var style = SubtitleSettings.Style.outline.rawValue
     @AppStorage(SubtitleSettings.boldKey) private var bold = false
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            PanelHeader(title: "Subtitles", close: close) { EmptyView() }
             Form {
                 Section {
                     Picker("Size", selection: $size) {
@@ -382,8 +471,7 @@ private struct SubtitleOptionsView: View {
                     Text("Timing")
                 }
             }
-            .navigationTitle("Subtitles")
-            .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
         }
         .onChange(of: size) { player.applySubtitleStyle() }
         .onChange(of: style) { player.applySubtitleStyle() }
@@ -406,7 +494,24 @@ private struct EpisodePickerView: View {
     @State private var seasonID: String?
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            PanelHeader(title: seasonTitle, close: onPick) {
+                if seasons.count > 1 {
+                    Menu {
+                        ForEach(seasons, id: \.id) { season in
+                            Button(season.name ?? "Season") {
+                                seasonID = season.id
+                                Task { await session.loadSeason(season.id) }
+                            }
+                        }
+                    } label: {
+                        Label("Season", systemImage: "list.number")
+                            .labelStyle(.iconOnly)
+                            .font(.title3)
+                    }
+                    .padding(.trailing, 8)
+                }
+            }
             List {
                 ForEach(session.seasonEpisodes, id: \.id) { episode in
                     Button {
@@ -439,27 +544,11 @@ private struct EpisodePickerView: View {
                         }
                     }
                     .foregroundStyle(.primary)
+                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
-            .navigationTitle(seasons.first(where: { $0.id == (seasonID ?? session.item.seasonID) })?.name ?? "Episodes")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if seasons.count > 1 {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            ForEach(seasons, id: \.id) { season in
-                                Button(season.name ?? "Season") {
-                                    seasonID = season.id
-                                    Task { await session.loadSeason(season.id) }
-                                }
-                            }
-                        } label: {
-                            Label("Season", systemImage: "list.number")
-                        }
-                    }
-                }
-            }
+            .scrollContentBackground(.hidden)
         }
         .task {
             if let seriesID = session.item.seriesID {
@@ -469,6 +558,10 @@ private struct EpisodePickerView: View {
                 await session.loadSeason()
             }
         }
+    }
+
+    private var seasonTitle: String {
+        seasons.first(where: { $0.id == (seasonID ?? session.item.seasonID) })?.name ?? "Episodes"
     }
 }
 

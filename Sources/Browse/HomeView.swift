@@ -91,6 +91,7 @@ struct HomeView: View {
     @Environment(SessionStore.self) private var store
     @State private var resume: [BaseItemDto] = []
     @State private var nextUp: [BaseItemDto] = []
+    @State private var history: [BaseItemDto] = []
     @State private var libraries: [BaseItemDto] = []
     @State private var latest: [String: [BaseItemDto]] = [:]
     @State private var errorMessage: String?
@@ -123,6 +124,9 @@ struct HomeView: View {
                     if let items = latest[library.id ?? ""], !items.isEmpty {
                         row("Recently added in \(library.name ?? "library")", items: items, wide: false)
                     }
+                }
+                if !history.isEmpty {
+                    row("Watch history", items: history, wide: true)
                 }
                 if lastLoaded == nil && errorMessage == nil {
                     ProgressView()
@@ -204,6 +208,7 @@ struct HomeView: View {
         async let resumeRequest = api.resumeItems()
         async let nextUpRequest = api.nextUp()
         async let librariesRequest = api.libraries()
+        async let historyRequest = api.watchHistory()
 
         var failures: [String] = []
         do { resume = try await resumeRequest } catch { failures.append("continue watching: \(error.localizedDescription)") }
@@ -216,6 +221,8 @@ struct HomeView: View {
         } catch {
             failures.append("libraries: \(error.localizedDescription)")
         }
+
+        do { history = try await historyRequest } catch { failures.append("watch history: \(error.localizedDescription)") }
 
         let api = api
         let libraryIDs = libraries.compactMap(\.id)
@@ -237,8 +244,8 @@ struct HomeView: View {
             for failure in failures {
                 AppLog.shared.log("Home: couldn't load \(failure)", level: .warning)
             }
-            errorMessage = failures.count == 3 ? "Couldn't load the home screen." : nil
+            errorMessage = failures.count == 4 ? "Couldn't load the home screen." : nil
         }
-        AppLog.shared.log("Home: \(resume.count) in progress, \(nextUp.count) next up, \(libraries.count) libraries")
+        AppLog.shared.log("Home: \(resume.count) in progress, \(nextUp.count) next up, \(history.count) watched, \(libraries.count) libraries")
     }
 }

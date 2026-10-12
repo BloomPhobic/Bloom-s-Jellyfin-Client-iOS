@@ -37,6 +37,21 @@ struct LibraryAPI {
         return try await client.send(Paths.getNextUp(parameters: parameters)).value.items ?? []
     }
 
+    /// Movies and episodes the user finished, most recent first.
+    func watchHistory() async throws -> [BaseItemDto] {
+        var parameters = Paths.GetItemsParameters()
+        parameters.userID = userID
+        parameters.isRecursive = true
+        parameters.includeItemTypes = [.movie, .episode]
+        parameters.filters = [.isPlayed]
+        parameters.sortBy = [.datePlayed]
+        parameters.sortOrder = [.descending]
+        parameters.limit = 20
+        parameters.fields = Self.listFields
+        parameters.enableUserData = true
+        return try await client.send(Paths.getItems(parameters: parameters)).value.items ?? []
+    }
+
     func latest(in libraryID: String) async throws -> [BaseItemDto] {
         var parameters = Paths.GetLatestMediaParameters()
         parameters.userID = userID
