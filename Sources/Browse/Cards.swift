@@ -9,7 +9,14 @@ final class ImageCache {
     static let shared = ImageCache()
 
     private let memory = NSCache<NSURL, UIImage>()
-    private let diskCache = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 300 * 1024 * 1024, directory: nil)
+    static let limitKey = "imageCache.limitMB"
+    static let limitOptions = [100, 300, 500, 1000]
+
+    private let diskCache = URLCache(
+        memoryCapacity: 16 * 1024 * 1024,
+        diskCapacity: (UserDefaults.standard.object(forKey: limitKey) as? Int ?? 300) * 1024 * 1024,
+        directory: nil
+    )
     private let session: URLSession
 
     private init() {
@@ -20,6 +27,12 @@ final class ImageCache {
         // Decoded images, bounded by their size in memory (about 80 MB), so big libraries can't pile up.
         memory.totalCostLimit = 80 * 1024 * 1024
         memory.countLimit = 400
+    }
+
+    /// The most the image cache may use on disk. Above it, iOS drops the oldest images by itself.
+    func setLimit(megabytes: Int) {
+        diskCache.diskCapacity = megabytes * 1024 * 1024
+        AppLog.shared.log("Image cache limit: \(megabytes) MB")
     }
 
     /// Bytes used on disk by downloaded images.

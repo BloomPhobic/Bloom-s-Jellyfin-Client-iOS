@@ -132,6 +132,7 @@ struct HomeView: View {
     @State private var lastLoaded: Date?
     @State private var playback: PlaybackSession?
     @State private var isStartingPlayback = false
+    @State private var isLoading = false
 
     /// Library types a video client can show.
     private static let videoLibraries: Set<CollectionType> = [.movies, .tvshows, .boxsets, .homevideos, .musicvideos]
@@ -231,9 +232,19 @@ struct HomeView: View {
                         .foregroundStyle(Theme.text3)
                         .lineLimit(1)
                 }
-                Text("Home")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Theme.text)
+                HStack(spacing: 10) {
+                    Text("Home")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    if isLoading && lastLoaded != nil {
+                        // Shown for every reload, including automatic ones (back online, back after a while).
+                        ProgressView()
+                            .tint(Theme.text3)
+                            .transition(.opacity)
+                            .accessibilityLabel("Refreshing")
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: isLoading)
             }
             Spacer()
             AccountMenu()
@@ -393,6 +404,8 @@ struct HomeView: View {
     }
 
     private func load() async {
+        isLoading = true
+        defer { isLoading = false }
         async let resumeRequest = api.resumeItems()
         async let nextUpRequest = api.nextUp()
         async let librariesRequest = api.libraries()

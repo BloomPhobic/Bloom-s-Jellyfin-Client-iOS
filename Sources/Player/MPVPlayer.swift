@@ -15,6 +15,8 @@ final class MPVPlayer: PlaybackEngine {
     private(set) var errorMessage: String?
     private(set) var stats: [(String, String)] = []
     private(set) var isAtEnd = false
+    /// Seconds of video downloaded ahead of the playback position.
+    private(set) var bufferedSeconds: Double = 0
     private(set) var subtitleDelay: Double = 0
 
     let layer = MPVMetalLayer()
@@ -173,6 +175,9 @@ final class MPVPlayer: PlaybackEngine {
         if buffering != isBuffering { isBuffering = buffering }
         if newPosition != position { position = newPosition }
         if newDuration != duration { duration = newDuration }
+        // Whole seconds only, so this doesn't redraw the player on every tiny change.
+        let buffered = (core.double("demuxer-cache-duration") ?? 0).rounded(.down)
+        if buffered != bufferedSeconds { bufferedSeconds = buffered }
     }
 
     private func refreshTracks() {

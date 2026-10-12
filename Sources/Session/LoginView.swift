@@ -1,5 +1,6 @@
 import JellyfinAPI
 import SwiftUI
+import UIKit
 
 /// Sign in to the saved server: pick a profile, use Quick Connect, or type a username and password.
 /// Also used to add another account while one is signed in.
@@ -305,6 +306,7 @@ struct QuickConnectView: View {
     @State private var code: String?
     @State private var isSigningIn = false
     @State private var errorMessage: String?
+    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 22) {
@@ -345,6 +347,20 @@ struct QuickConnectView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Code \(code.map(String.init).joined(separator: " "))")
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
+                Button {
+                    UIPasteboard.general.string = code
+                    withAnimation(.easeInOut(duration: 0.2)) { copied = true }
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation(.easeInOut(duration: 0.2)) { copied = false }
+                    }
+                } label: {
+                    Label(copied ? "Copied" : "Copy code", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 15, weight: .semibold))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.accentColor)
                 HStack(spacing: 8) {
                     ProgressView()
                     Text(isSigningIn ? "Signing in…" : "Waiting for approval…")

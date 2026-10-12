@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
     @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
     @State private var imageCacheBytes = 0
+    @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
 
     var body: some View {
         NavigationStack {
@@ -54,6 +55,15 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("Image cache", value: ByteCountFormatter.string(fromByteCount: Int64(imageCacheBytes), countStyle: .file))
+                    Picker("Keep up to", selection: $imageCacheLimit) {
+                        ForEach(ImageCache.limitOptions, id: \.self) { megabytes in
+                            Text(megabytes >= 1000 ? "\(megabytes / 1000) GB" : "\(megabytes) MB").tag(megabytes)
+                        }
+                    }
+                    .onChange(of: imageCacheLimit) {
+                        ImageCache.shared.setLimit(megabytes: imageCacheLimit)
+                        imageCacheBytes = ImageCache.shared.diskUsage
+                    }
                     Button("Clear image cache") {
                         ImageCache.shared.clear()
                         imageCacheBytes = ImageCache.shared.diskUsage
@@ -61,7 +71,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Storage")
                 } footer: {
-                    Text("Posters and backdrops are kept for faster loading (up to 300 MB). Clearing only frees space; they download again when needed.")
+                    Text("Posters and backdrops are kept for faster loading. Past the limit, the oldest are removed automatically. Clearing only frees space; they download again when needed.")
                 }
 
                 Section("Diagnostics") {

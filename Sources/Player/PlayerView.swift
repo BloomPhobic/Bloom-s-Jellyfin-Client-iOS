@@ -51,6 +51,7 @@ struct PlayerView: View {
             }
             // Skip and next-episode stay visible even when the controls are hidden.
             cornerActions
+            connectionPill
             panelLayer
             if session.showsError, let error = player.errorMessage {
                 errorPanel(error)
@@ -278,6 +279,36 @@ struct PlayerView: View {
                 toggle(.subtitles)
             }
         }
+    }
+
+    /// Top centre, while the connection is down: how long the buffer will last, or that playback is
+    /// waiting for the connection to come back.
+    @ViewBuilder
+    private var connectionPill: some View {
+        let connectionDown = store.isOffline || store.isServerUnreachable
+        Group {
+            if connectionDown && player.errorMessage == nil {
+                HStack(spacing: 8) {
+                    Image(systemName: "wifi.slash")
+                    if player.isBuffering {
+                        Text("Waiting for connection…")
+                    } else {
+                        Text("Offline · playing from buffer (\(Self.format(player.bufferedSeconds)) left)")
+                    }
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Theme.background.opacity(0.85)))
+                .overlay(Capsule().strokeBorder(Color.orange.opacity(0.7), lineWidth: 1))
+                .padding(.top, showControls ? 64 : 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.easeInOut(duration: 0.25), value: connectionDown)
+        .allowsHitTesting(false)
     }
 
     /// Bottom-right: the next-episode card, or a skip button during a marked segment.
