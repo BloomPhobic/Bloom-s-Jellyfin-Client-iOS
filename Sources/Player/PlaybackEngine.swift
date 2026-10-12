@@ -17,6 +17,9 @@ protocol PlaybackEngine: AnyObject {
     var duration: Double { get }
     var audioTracks: [MediaTrack] { get }
     var subtitleTracks: [MediaTrack] { get }
+    /// Playback reached the end of the file (the player stays on the last frame).
+    var isAtEnd: Bool { get }
+    var subtitleDelay: Double { get }
 
     func togglePause()
     func seek(to seconds: Double)
@@ -24,6 +27,10 @@ protocol PlaybackEngine: AnyObject {
     func selectAudio(_ id: Int)
     /// Pass nil to turn subtitles off.
     func selectSubtitle(_ id: Int?)
+    /// Replaces the current file, starting at `startSeconds`.
+    func load(url: URL, startSeconds: Double)
+    func applySubtitleStyle()
+    func setSubtitleDelay(_ seconds: Double)
     func stop()
 }
 
@@ -37,5 +44,12 @@ enum PlayerSettings {
 
     static var hardwareDecoding: Bool {
         UserDefaults.standard.object(forKey: hardwareDecodingKey) as? Bool ?? true
+    }
+
+    static let autoplayNextKey = "player.autoplayNext"
+
+    /// Count down and play the next episode automatically; when off, the card waits for a tap.
+    static var autoplayNext: Bool {
+        UserDefaults.standard.object(forKey: autoplayNextKey) as? Bool ?? true
     }
 }

@@ -14,6 +14,8 @@ final class MPVPlayer: PlaybackEngine {
     private(set) var subtitleTracks: [MediaTrack] = []
     private(set) var errorMessage: String?
     private(set) var stats: [(String, String)] = []
+    private(set) var isAtEnd = false
+    private(set) var subtitleDelay: Double = 0
 
     let layer = MPVMetalLayer()
     @ObservationIgnored private var core: MPVCore?
@@ -64,6 +66,7 @@ final class MPVPlayer: PlaybackEngine {
             return
         }
         core = newCore
+        applySubtitleStyle()
         newCore.command(["loadfile", url.absoluteString, "replace"])
         UIApplication.shared.isIdleTimerDisabled = true
     }
@@ -75,6 +78,49 @@ final class MPVPlayer: PlaybackEngine {
         UIApplication.shared.isIdleTimerDisabled = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         AppLog.shared.log("Player closed")
+    }
+
+    func load(url: URL, startSeconds: Double) {
+        guard let core else { return }
+        // "start" is an option, so it applies to the next file and has to be reset for each load.
+        core.setString("start", startSeconds > 0 ? String(format: "%.3f", startSeconds) : "none")
+        errorMessage = nil
+        isBuffering = true
+        isAtEnd = false
+        position = startSeconds
+        duration = 0
+        core.command(["loadfile", url.absoluteString, "replace"])
+        core.setString("pause", "no")
+    }
+
+    // MARK: - Subtitles
+
+    /// Applies the size and style from Settings. These affect plain subtitles (SRT and similar);
+    /// ASS subtitles keep their own styling except for size.
+    func applySubtitleStyle() {
+        guard let core else { return }
+        let size = SubtitleSettings.size
+        let style = SubtitleSettings.style
+        let options: [(String, String)] = [
+            ("sub-scale", String(size.scale)),
+            ("sub-bold", SubtitleSettings.bold ? "yes" : "no"),
+            ("sub-border-size", String(style.borderSize)),
+            ("sub-border-style", style == .box ? "background-box" : "outline-and-shadow"),
+            ("sub-back-color", "#B0000000"),
+        ]
+        for (name, value) in options {
+            let status = core.setString(name, value)
+            if status < 0 {
+                AppLog.shared.log("mpv: couldn't set \(name)=\(value): \(MPVCore.errorString(status))", level: .warning)
+            }
+        }
+    }
+
+    func setSubtitleDelay(_ seconds: Double) {
+        guard let core else { return }
+        let rounded = (seconds * 10).rounded() / 10
+        core.setString("sub-delay", String(rounded))
+        subtitleDelay = rounded
     }
 
     // MARK: - Controls
@@ -121,6 +167,8 @@ final class MPVPlayer: PlaybackEngine {
         let buffering = core.flag("paused-for-cache") || core.flag("seeking") || core.string("time-pos") == nil
         let newPosition = core.double("time-pos") ?? position
         let newDuration = core.double("duration") ?? duration
+        let atEnd = core.flag("eof-reached")
+        if atEnd != isAtEnd { isAtEnd = atEnd }
         if paused != isPaused { isPaused = paused }
         if buffering != isBuffering { isBuffering = buffering }
         if newPosition != position { position = newPosition }

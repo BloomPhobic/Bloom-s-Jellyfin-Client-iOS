@@ -119,6 +119,26 @@ struct LibraryAPI {
         return try await client.send(Paths.getEpisodes(seriesID: seriesID, parameters: parameters)).value.items ?? []
     }
 
+    /// The episode after this one, crossing into the next season if needed.
+    func nextEpisode(after episode: BaseItemDto) async throws -> BaseItemDto? {
+        guard let seriesID = episode.seriesID, let id = episode.id else { return nil }
+        var parameters = Paths.GetEpisodesParameters()
+        parameters.userID = userID
+        parameters.startItemID = id
+        parameters.limit = 2
+        parameters.isMissing = false
+        parameters.fields = [.overview, .primaryImageAspectRatio]
+        parameters.enableUserData = true
+        let items = try await client.send(Paths.getEpisodes(seriesID: seriesID, parameters: parameters)).value.items ?? []
+        guard let index = items.firstIndex(where: { $0.id == id }), items.indices.contains(index + 1) else { return nil }
+        return items[index + 1]
+    }
+
+    /// Intro, recap, preview and credits markers, if the server has them.
+    func segments(itemID: String) async throws -> [MediaSegmentDto] {
+        try await client.send(Paths.getItemSegments(itemID: itemID)).value.items ?? []
+    }
+
     func setPlayed(_ played: Bool, itemID: String) async throws -> UserItemDataDto {
         let request = played
             ? Paths.markPlayedItem(itemID: itemID, userID: userID)

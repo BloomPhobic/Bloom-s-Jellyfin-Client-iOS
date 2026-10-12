@@ -1,24 +1,16 @@
 import JellyfinAPI
 import SwiftUI
 
-struct PlaybackRequest: Identifiable {
-    let id = UUID()
-    let url: URL
-    let title: String
-    var startSeconds: Double = 0
-    /// Sends progress to the server; nil for test playback.
-    var reporter: PlaybackReporter?
-}
-
 /// A movie, episode or video: artwork, details, Play/Resume, and watched and favourite toggles.
 struct ItemDetailView: View {
     let api: LibraryAPI
     let itemID: String
 
     @Environment(BrowseNavigator.self) private var navigator
+    @Environment(SessionStore.self) private var store
     @State private var item: BaseItemDto?
     @State private var errorMessage: String?
-    @State private var playback: PlaybackRequest?
+    @State private var playback: PlaybackSession?
 
     var body: some View {
         List {
@@ -89,8 +81,9 @@ struct ItemDetailView: View {
             // Show the new resume position and watched state.
             Task { await reload() }
         }
-        .fullScreenCover(item: $playback) { request in
-            PlayerView(request: request)
+        .fullScreenCover(item: $playback) { session in
+            PlayerView(session: session)
+                .environment(store)
         }
     }
 
@@ -152,23 +145,11 @@ struct ItemDetailView: View {
     }
 
     private func play(item: BaseItemDto, source: MediaSourceInfo, from startSeconds: Double) {
-        guard let url = api.streamURL(itemID: itemID, mediaSourceID: source.id) else {
+        guard let session = PlaybackSession(api: api, item: item, mediaSource: source, startSeconds: startSeconds) else {
             errorMessage = "Could not build the stream URL."
             return
         }
-        let log = AppLog.shared
-        let title = [item.seriesName, item.episodeLabel, item.name].compactMap { $0 }.joined(separator: " · ")
-        log.log("Play: \(title) [\(source.name ?? "source")]" + (startSeconds > 0 ? " from \(Self.timeText(startSeconds))" : ""))
-        for line in MediaSummary.lines(for: source) {
-            log.log("  \(line)")
-        }
-        log.log("  Options: HDR passthrough \(PlayerSettings.hdrPassthrough ? "on" : "off"), hardware decoding \(PlayerSettings.hardwareDecoding ? "on" : "off")")
-        playback = PlaybackRequest(
-            url: url,
-            title: item.name ?? "",
-            startSeconds: startSeconds,
-            reporter: PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
-        )
+        playback = session
     }
 
     static func timeText(_ seconds: Double) -> String {
