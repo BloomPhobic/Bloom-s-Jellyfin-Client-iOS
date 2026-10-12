@@ -138,6 +138,10 @@ struct HomeView: View {
 
     /// The big card at the top: the most recent thing in progress, otherwise the first Next up.
     private var heroItem: BaseItemDto? { resume.first ?? nextUp.first }
+    /// Loaded, without errors, and nothing at all to show.
+    private var isEmpty: Bool {
+        lastLoaded != nil && libraries.isEmpty && resume.isEmpty && nextUp.isEmpty && history.isEmpty
+    }
     private var continueRow: [BaseItemDto] { resume.isEmpty ? [] : Array(resume.dropFirst()) }
     private var nextUpRow: [BaseItemDto] { resume.isEmpty ? Array(nextUp.dropFirst()) : nextUp }
 
@@ -146,19 +150,23 @@ struct HomeView: View {
             LazyVStack(alignment: .leading, spacing: 26) {
                 header
                 if let errorMessage {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                        Button("Try again") { Task { await load() } }
+                    ErrorState(message: errorMessage) {
+                        await load()
                     }
-                    .padding(.horizontal, 20)
+                } else if isEmpty {
+                    ContentUnavailableView(
+                        "Nothing here yet",
+                        systemImage: "film.stack",
+                        description: Text("This account has no libraries, or they're hidden from it.")
+                    )
+                    .padding(.top, 40)
                 }
                 if let heroItem {
                     hero(heroItem)
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
                 if !libraries.isEmpty {
-                    libraryPills
+                    libraryCards
                 }
                 if !continueRow.isEmpty {
                     row("Continue watching", items: continueRow, wide: true, seeAll: .continueWatching)
@@ -192,6 +200,9 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
             // Reload the next time Home is shown.
             lastLoaded = .distantPast
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .contentShouldRefresh)) { _ in
+            Task { await load() }
         }
         .task {
             // Reload when coming back to Home, but not on every tab switch.
@@ -297,17 +308,21 @@ struct HomeView: View {
             .padding(.horizontal, 16)
     }
 
-    private var libraryPills: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(libraries, id: \.id) { library in
-                    NavigationLink(value: BrowseRoute.library(library)) {
-                        Pill(title: library.name ?? "Library")
+    /// Big image cards for the libraries, in a horizontal scroll so they don't take much height.
+    private var libraryCards: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(text: "Libraries")
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(libraries, id: \.id) { library in
+                        NavigationLink(value: BrowseRoute.library(library)) {
+                            LibraryCard(library: library, imageURL: api.imageURL(Artwork.landscape(library), maxWidth: 640))
+                        }
+                        .buttonStyle(PressableStyle())
                     }
-                    .buttonStyle(PressableStyle())
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
         }
     }
 
@@ -388,7 +403,7 @@ struct HomeView: View {
         var newNextUp = nextUp
         var newLibraries = libraries
         var newHistory = history
-        do { newResume = try await resumeRequest } catch { failures.append("continue watching: \(error.localizedDescription)") }
+        do { newResume = try await resumeRequest } catch { AuthWatch.report(error); failures.append("continue watching: \(error.localizedDescription)") }
         do { newNextUp = try await nextUpRequest } catch { failures.append("next up: \(error.localizedDescription)") }
         do {
             let all = try await librariesRequest
@@ -428,8 +443,51 @@ struct HomeView: View {
             for failure in failures {
                 AppLog.shared.log("Home: couldn't load \(failure)", level: .warning)
             }
-            errorMessage = failures.count == 4 ? "Couldn't load the home screen." : nil
+            errorMessage = failures.count == 4 ? "The server didn't answer. Check your connection and try again." : nil
         }
         AppLog.shared.log("Home: \(resume.count) in progress, \(nextUp.count) next up, \(history.count) watched, \(libraries.count) libraries")
+    }
+}
+
+/// A library on Home: its image with the name and a type icon on a dark band.
+private struct LibraryCard: View {
+    let library: BaseItemDto
+    let imageURL: URL?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 210, height: 118)
+            .overlay {
+                RemoteImage(url: imageURL)
+            }
+            .overlay(alignment: .bottomLeading) {
+                HStack(spacing: 7) {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(library.name ?? "Library")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.background.opacity(0.75))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+    }
+
+    private var icon: String {
+        switch library.collectionType {
+        case .movies: return "film"
+        case .tvshows: return "tv"
+        case .boxsets: return "square.stack"
+        case .homevideos: return "video"
+        case .musicvideos: return "music.note.tv"
+        default: return "folder"
+        }
     }
 }

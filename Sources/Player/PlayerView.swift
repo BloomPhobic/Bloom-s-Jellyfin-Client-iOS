@@ -1,5 +1,6 @@
 import JellyfinAPI
 import SwiftUI
+import UIKit
 
 /// Full-screen player: overlay controls, skip buttons, the next-episode card, subtitle options
 /// and an episode list. Episodes switch inside the same player.
@@ -28,7 +29,16 @@ struct PlayerView: View {
                         showControls.toggle()
                     }
                 }
-            if player.isBuffering && player.errorMessage == nil {
+            if session.isRecovering || (player.errorMessage != nil && !session.showsError) {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
+                    Text("Reconnecting…")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text2)
+                }
+            } else if player.isBuffering && player.errorMessage == nil {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
@@ -42,7 +52,7 @@ struct PlayerView: View {
             // Skip and next-episode stay visible even when the controls are hidden.
             cornerActions
             panelLayer
-            if let error = player.errorMessage {
+            if session.showsError, let error = player.errorMessage {
                 errorPanel(error)
             }
         }
@@ -323,19 +333,52 @@ struct PlayerView: View {
     }
 
     private func errorPanel(_ message: String) -> some View {
-        VStack(spacing: 12) {
-            Text(verbatim: message)
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color.orange)
+            Text(Self.friendly(message))
+                .font(.system(size: 16, weight: .semibold))
                 .multilineTextAlignment(.center)
-            Text("Details are in Settings → Log.")
-                .font(.caption)
-            Button("Close") {
-                close()
+            Text(verbatim: "mpv: \(message)")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.text3)
+            HStack(spacing: 10) {
+                Button("Retry") {
+                    session.retryNow()
+                }
+                .buttonStyle(PrimaryButtonStyle(height: 44))
+                Button("Copy details") {
+                    UIPasteboard.general.string = session.errorReport()
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.text)
+                Button("Close") {
+                    close()
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.text)
             }
-            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: 420)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.text)
+        .padding(24)
+        .frame(maxWidth: 480)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.surface.opacity(0.96)))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
         .padding()
-        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// mpv's error, in words for the viewer.
+    private static func friendly(_ message: String) -> String {
+        let text = message.lowercased()
+        if text.contains("unrecognized") || text.contains("no audio or video") || text.contains("unsupported") {
+            return "This file can't be played. It may be damaged, or in a format the player can't read."
+        }
+        if text.contains("loading failed") || text.contains("network") || text.contains("tls") || text.contains("http") {
+            return "The video couldn't be loaded from the server. Check your connection, then retry."
+        }
+        return "Playback stopped because of an error."
     }
 
     private func close() {

@@ -127,6 +127,47 @@ struct LogoMark: View {
     }
 }
 
+/// "Couldn't load" with the reason and a Try again button.
+struct ErrorState: View {
+    let message: String
+    let retry: () async -> Void
+
+    @State private var isRetrying = false
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(Theme.text3)
+            Text("Couldn't load")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Theme.text)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.text2)
+                .multilineTextAlignment(.center)
+            Button {
+                Task {
+                    isRetrying = true
+                    await retry()
+                    isRetrying = false
+                }
+            } label: {
+                if isRetrying {
+                    ProgressView().tint(Theme.onAccent)
+                } else {
+                    Text("Try again")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle(height: 44))
+            .frame(width: 180)
+            .disabled(isRetrying)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity)
+    }
+}
+
 /// Thin accent progress bar on a faint track.
 struct ProgressBar: View {
     let fraction: Double

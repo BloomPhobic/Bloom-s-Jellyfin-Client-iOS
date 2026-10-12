@@ -9,15 +9,26 @@ final class ImageCache {
     static let shared = ImageCache()
 
     private let memory = NSCache<NSURL, UIImage>()
-    private let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.urlCache = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 300 * 1024 * 1024, directory: nil)
-        config.requestCachePolicy = .returnCacheDataElseLoad
-        return URLSession(configuration: config)
-    }()
+    private let diskCache = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 300 * 1024 * 1024, directory: nil)
+    private let session: URLSession
 
     private init() {
-        memory.countLimit = 300
+        let config = URLSessionConfiguration.default
+        config.urlCache = diskCache
+        config.requestCachePolicy = .returnCacheDataElseLoad
+        session = URLSession(configuration: config)
+        // Decoded images, bounded by their size in memory (about 80 MB), so big libraries can't pile up.
+        memory.totalCostLimit = 80 * 1024 * 1024
+        memory.countLimit = 400
+    }
+
+    /// Bytes used on disk by downloaded images.
+    var diskUsage: Int { diskCache.currentDiskUsage }
+
+    func clear() {
+        memory.removeAllObjects()
+        diskCache.removeAllCachedResponses()
+        AppLog.shared.log("Image cache cleared")
     }
 
     func cached(_ url: URL) -> UIImage? {
@@ -37,7 +48,8 @@ final class ImageCache {
             UIImage(data: data)?.preparingForDisplay()
         }.value
         if let image {
-            memory.setObject(image, forKey: url as NSURL)
+            let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+            memory.setObject(image, forKey: url as NSURL, cost: cost)
         }
         return image
     }
@@ -58,6 +70,12 @@ struct RemoteImage: View {
         ZStack {
             Rectangle()
                 .fill(Theme.raised2)
+            if url == nil {
+                // The item has no artwork on the server.
+                Image(systemName: "film")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(Theme.text3.opacity(0.6))
+            }
             if let image {
                 Image(uiImage: image)
                     .resizable()

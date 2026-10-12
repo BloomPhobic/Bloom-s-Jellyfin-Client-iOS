@@ -60,7 +60,8 @@ struct SearchView: View {
             searchedTerm = term
             errorMessage = nil
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !AuthWatch.isCancellation(error) else { return }
+            AuthWatch.report(error)
             errorMessage = error.localizedDescription
             AppLog.shared.log("Search failed: \(error.localizedDescription)", level: .error)
         }

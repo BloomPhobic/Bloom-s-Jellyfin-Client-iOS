@@ -261,7 +261,7 @@ final class MPVPlayer: PlaybackEngine {
             refreshState()
         case .endFile(let error):
             if let error {
-                errorMessage = "Playback failed: \(error)"
+                errorMessage = error
                 AppLog.shared.log("Playback failed: \(error)", level: .error)
             }
         }

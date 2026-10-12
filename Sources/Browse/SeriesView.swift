@@ -25,10 +25,11 @@ struct SeriesView: View {
                 content(series)
                     .transition(.opacity)
             } else if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .padding(.top, 140)
-                    .padding(.horizontal, 20)
+                ErrorState(message: errorMessage) {
+                    self.errorMessage = nil
+                    await loadSeries()
+                }
+                .padding(.top, 120)
             }
         }
         .background(Theme.background.ignoresSafeArea())
@@ -97,6 +98,16 @@ struct SeriesView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
             Task { await reloadAfterChange() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .contentShouldRefresh)) { _ in
+            Task {
+                if series == nil {
+                    errorMessage = nil
+                    await loadSeries()
+                } else {
+                    await reloadAfterChange()
+                }
+            }
         }
         .fullScreenCover(item: $playback) { session in
             PlayerView(session: session)
@@ -250,8 +261,10 @@ struct SeriesView: View {
                 ?? seasons.first?.id
             await loadUpNext()
         } catch {
-            errorMessage = "Couldn't load the show: \(error.localizedDescription)"
-            AppLog.shared.log(errorMessage ?? "", level: .error)
+            guard !AuthWatch.isCancellation(error) else { return }
+            AuthWatch.report(error)
+            errorMessage = error.localizedDescription
+            AppLog.shared.log("Couldn't load the show: \(error.localizedDescription)", level: .error)
         }
     }
 
@@ -270,7 +283,8 @@ struct SeriesView: View {
             }
             errorMessage = nil
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !AuthWatch.isCancellation(error) else { return }
+            AuthWatch.report(error)
             errorMessage = "Couldn't load episodes: \(error.localizedDescription)"
             AppLog.shared.log(errorMessage ?? "", level: .error)
         }

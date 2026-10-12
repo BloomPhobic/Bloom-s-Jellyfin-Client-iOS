@@ -60,7 +60,11 @@ struct LibraryView: View {
             }
         }
         .overlay {
-            if !isLoading && items.isEmpty {
+            if !isLoading && items.isEmpty, let errorMessage {
+                ErrorState(message: errorMessage) {
+                    await reload()
+                }
+            } else if !isLoading && items.isEmpty {
                 ContentUnavailableView(
                     errorMessage == nil ? "Nothing here" : "Couldn't load",
                     systemImage: errorMessage == nil ? "film.stack" : "exclamationmark.triangle",
@@ -69,6 +73,9 @@ struct LibraryView: View {
             }
         }
         .refreshable { await Task { await reload() }.value }
+        .onReceive(NotificationCenter.default.publisher(for: .contentShouldRefresh)) { _ in
+            Task { await reload() }
+        }
         .animation(.easeInOut(duration: 0.25), value: query)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(parent.name ?? "Library")
@@ -207,9 +214,10 @@ struct LibraryView: View {
 
     private func report(_ error: Error) {
         // A cancelled request (the view went away, or a newer load replaced it) isn't a failure.
-        if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+        if Task.isCancelled || AuthWatch.isCancellation(error) {
             return
         }
+        AuthWatch.report(error)
         errorMessage = error.localizedDescription
         AppLog.shared.log("Library \(parent.name ?? ""): \(error.localizedDescription)", level: .error)
     }

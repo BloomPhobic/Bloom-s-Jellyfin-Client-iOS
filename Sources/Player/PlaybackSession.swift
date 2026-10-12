@@ -44,6 +44,16 @@ final class PlaybackSession: Identifiable {
     let initialStart: Double
 
     @ObservationIgnored private var reporter: PlaybackReporter?
+    /// The file being played, for reopening after an error.
+    @ObservationIgnored private var currentURL: URL
+    /// The last position where playback was running normally.
+    @ObservationIgnored private var lastGoodPosition: Double = 0
+    @ObservationIgnored private var retryCount = 0
+    @ObservationIgnored private var retryFromPosition: Double = 0
+    /// Reopening the stream after an error; the player shows "Reconnecting…".
+    private(set) var isRecovering = false
+
+    static let maxRetries = 3
     @ObservationIgnored private var mediaSourceID: String?
     @ObservationIgnored private var isSwitching = false
 
@@ -61,6 +71,8 @@ final class PlaybackSession: Identifiable {
         self.item = item
         initialURL = url
         initialStart = startSeconds
+        currentURL = url
+        lastGoodPosition = startSeconds
         mediaSourceID = source.id
         reporter = PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
         Self.logPlay(item: item, source: source, startSeconds: startSeconds)
@@ -131,8 +143,17 @@ final class PlaybackSession: Identifiable {
 
     /// Called every half second by the player screen.
     func tick() {
+        if player.errorMessage != nil {
+            recoverIfPossible()
+            return
+        }
         guard player.duration > 0, !player.isBuffering else { return }
         reporter?.update(position: player.position, isPaused: player.isPaused)
+        lastGoodPosition = player.position
+        // Playing fine for a while after a retry: allow fresh retries for the next problem.
+        if retryCount > 0, player.position > retryFromPosition + 30 {
+            retryCount = 0
+        }
 
         // Start, keep or reset the next-episode countdown.
         if showsNextCard {
@@ -170,6 +191,42 @@ final class PlaybackSession: Identifiable {
             return position >= outro.start
         }
         return player.duration > Self.nextCardLead * 4 && position >= player.duration - Self.nextCardLead
+    }
+
+    // MARK: - Errors
+
+    /// The error panel shows once automatic retries are used up.
+    var showsError: Bool {
+        player.errorMessage != nil && !isRecovering && retryCount >= Self.maxRetries
+    }
+
+    /// A stream that dropped (network blip, server restart) usually plays again when reopened at
+    /// the same spot, so try that a few times before showing an error.
+    private func recoverIfPossible() {
+        guard !isRecovering, retryCount < Self.maxRetries else { return }
+        retryCount += 1
+        isRecovering = true
+        retryFromPosition = lastGoodPosition
+        let attempt = retryCount
+        AppLog.shared.log("Playback error (\(player.errorMessage ?? "?")); reopening at \(ItemDetailView.timeText(lastGoodPosition)), attempt \(attempt) of \(Self.maxRetries)", level: .warning)
+        Task {
+            try? await Task.sleep(for: .seconds(Double(attempt) * 1.5))
+            player.load(url: currentURL, startSeconds: lastGoodPosition)
+            isRecovering = false
+        }
+    }
+
+    /// The Retry button on the error panel.
+    func retryNow() {
+        retryCount = 0
+        AppLog.shared.log("Retrying at \(ItemDetailView.timeText(lastGoodPosition))")
+        player.load(url: currentURL, startSeconds: lastGoodPosition)
+    }
+
+    /// Text for "Copy details": what was playing, the error, and the recent log.
+    func errorReport() -> String {
+        let recent = AppLog.shared.exportText.split(separator: "\n").suffix(60).joined(separator: "\n")
+        return "\(title)\nError: \(player.errorMessage ?? "none")\n\n\(recent)"
     }
 
     func skip(_ segment: PlaybackSegment) {
@@ -211,6 +268,9 @@ final class PlaybackSession: Identifiable {
         nextEpisode = nil
         nextCardDismissed = false
         reporter = PlaybackReporter(client: api.client, itemID: episodeID, mediaSourceID: source.id)
+        currentURL = url
+        lastGoodPosition = start
+        retryCount = 0
         player.load(url: url, startSeconds: start)
         await loadExtras()
     }
@@ -225,6 +285,8 @@ final class PlaybackSession: Identifiable {
         AppLog.shared.log("Address changed during playback; reopening from \(newAPI.client.configuration.url.absoluteString) at \(ItemDetailView.timeText(position))")
         // The old address may be gone, so start reporting through the new one.
         reporter = PlaybackReporter(client: newAPI.client, itemID: itemID, mediaSourceID: mediaSourceID)
+        currentURL = url
+        retryCount = 0
         player.load(url: url, startSeconds: position)
     }
 

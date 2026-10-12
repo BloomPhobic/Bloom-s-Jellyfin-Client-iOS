@@ -61,6 +61,13 @@ final class SessionStore {
     private(set) var session: SavedSession?
     /// The login screen is open to add another account while one is signed in.
     var isAddingAccount = false
+    /// A short message for the banner at the top of the app (for example an expired sign-in).
+    var notice: String?
+    /// The phone has no network connection at all.
+    private(set) var isOffline = false
+    /// The last address check found nothing reachable. The previous address stays in use, and the
+    /// check repeats every 15 s until one answers.
+    private(set) var isServerUnreachable = false
     /// Client for the current route, with the access token when signed in.
     private(set) var client: JellyfinClient?
 
@@ -71,10 +78,19 @@ final class SessionStore {
     @ObservationIgnored private var pathMonitor: NWPathMonitor?
     @ObservationIgnored private var pathSignature: String?
     @ObservationIgnored private var pathChangeTask: Task<Void, Never>?
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
+    @ObservationIgnored private var unauthorizedObserver: NSObjectProtocol?
+    @ObservationIgnored private var backgroundedAt: Date?
 
     init() {
         server = ServerRecord.load()
         restoreSession()
+        // Any request that comes back 401/403 triggers a token check (see AuthWatch).
+        unauthorizedObserver = NotificationCenter.default.addObserver(forName: .requestUnauthorized, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recheckSession()
+            }
+        }
     }
 
     /// Connects to the saved server and starts watching for network changes. Safe to call more than once.
@@ -120,9 +136,18 @@ final class SessionStore {
                 route = newRoute
             }
             await checkSavedSession()
+            if isServerUnreachable {
+                isServerUnreachable = false
+                log.log("Server reachable again")
+                NotificationCenter.default.post(name: .contentShouldRefresh, object: nil)
+            }
         } else if let route {
+            isServerUnreachable = true
+            scheduleRetry()
             log.log("No address answered. Still using \(route.address) until the next check.", level: .warning)
         } else {
+            isServerUnreachable = true
+            scheduleRetry()
             log.log("No address answered.", level: .error)
         }
 
@@ -174,6 +199,44 @@ final class SessionStore {
         }
     }
 
+    /// While nothing answers, check again every 15 s.
+    private func scheduleRetry() {
+        guard retryTask == nil else { return }
+        retryTask = Task {
+            while !Task.isCancelled, isServerUnreachable {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, isServerUnreachable else { break }
+                await resolve()
+            }
+            retryTask = nil
+        }
+    }
+
+    // MARK: - App lifecycle
+
+    func appDidEnterBackground() {
+        backgroundedAt = Date()
+    }
+
+    /// After a long time away, the network, the token and the pages may all be stale.
+    func appDidBecomeActive() {
+        defer { backgroundedAt = nil }
+        guard let backgroundedAt, Date().timeIntervalSince(backgroundedAt) > 10 * 60 else { return }
+        AppLog.shared.log("Back after \(Int(Date().timeIntervalSince(backgroundedAt) / 60)) min; refreshing")
+        sessionChecked = false
+        Task {
+            await resolve()
+            NotificationCenter.default.post(name: .contentShouldRefresh, object: nil)
+        }
+    }
+
+    /// A request was refused: make sure the token is still valid.
+    func recheckSession() {
+        guard session != nil else { return }
+        sessionChecked = false
+        Task { await checkSavedSession() }
+    }
+
     /// Saves the server's ID and name the first time it is reached (or if the name changed).
     private func remember(serverID: String?, name: String?) {
         guard var record = server else { return }
@@ -199,15 +262,19 @@ final class SessionStore {
         monitor.pathUpdateHandler = { [weak self] path in
             let interfaces = path.availableInterfaces.map(\.name).joined(separator: ",")
             let signature = "\(path.status) \(interfaces)"
+            let satisfied = path.status == .satisfied
             Task { @MainActor in
-                self?.pathChanged(signature)
+                self?.pathChanged(signature, satisfied: satisfied)
             }
         }
         monitor.start(queue: DispatchQueue(label: "SessionStore.pathMonitor"))
         pathMonitor = monitor
     }
 
-    private func pathChanged(_ signature: String) {
+    private func pathChanged(_ signature: String, satisfied: Bool) {
+        if isOffline == satisfied {
+            isOffline = !satisfied
+        }
         guard let previous = pathSignature else {
             pathSignature = signature
             return
@@ -473,6 +540,7 @@ final class SessionStore {
             sessionChecked = true
             if status == 401 || status == 403 {
                 AppLog.shared.log("The sign-in for \(current.userName) is no longer valid (HTTP \(status)). Please sign in again.", level: .warning)
+                notice = "The sign-in for \(current.userName) has expired. Please sign in again."
                 forget(current)
             } else {
                 AppLog.shared.log("Saved sign-in OK for \(current.userName) (HTTP \(status))")
@@ -511,5 +579,27 @@ final class SessionStore {
         let new = UUID().uuidString
         UserDefaults.standard.set(new, forKey: deviceIDKey)
         return new
+    }
+}
+
+extension Notification.Name {
+    /// A request came back 401/403; the token may have been revoked.
+    static let requestUnauthorized = Notification.Name("requestUnauthorized")
+    /// The connection came back, or the app returned after a long time: pages should reload.
+    static let contentShouldRefresh = Notification.Name("contentShouldRefresh")
+}
+
+/// Lets any screen report a failed request without knowing about accounts.
+enum AuthWatch {
+    static func report(_ error: Error) {
+        let text = String(describing: error)
+        if text.contains("unacceptableStatusCode(401)") || text.contains("unacceptableStatusCode(403)") {
+            NotificationCenter.default.post(name: .requestUnauthorized, object: nil)
+        }
+    }
+
+    /// Cancelled requests (the page went away, or a newer load replaced them) aren't failures.
+    static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 }

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(PlayerSettings.hdrPassthroughKey) private var hdrPassthrough = true
     @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
     @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
+    @State private var imageCacheBytes = 0
 
     var body: some View {
         NavigationStack {
@@ -51,6 +52,18 @@ struct SettingsView: View {
                     Text("Changes apply the next time a video starts.")
                 }
 
+                Section {
+                    LabeledContent("Image cache", value: ByteCountFormatter.string(fromByteCount: Int64(imageCacheBytes), countStyle: .file))
+                    Button("Clear image cache") {
+                        ImageCache.shared.clear()
+                        imageCacheBytes = ImageCache.shared.diskUsage
+                    }
+                } header: {
+                    Text("Storage")
+                } footer: {
+                    Text("Posters and backdrops are kept for faster loading (up to 300 MB). Clearing only frees space; they download again when needed.")
+                }
+
                 Section("Diagnostics") {
                     NavigationLink("Log") {
                         LogView()
@@ -68,6 +81,7 @@ struct SettingsView: View {
             .themedBackground()
             .tabBarClearance()
             .navigationTitle("Settings")
+            .onAppear { imageCacheBytes = ImageCache.shared.diskUsage }
         }
     }
 

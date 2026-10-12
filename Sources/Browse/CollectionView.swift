@@ -39,7 +39,9 @@ struct CollectionView: View {
         }
         .background(Theme.background.ignoresSafeArea())
         .overlay {
-            if hasLoaded && !isLoading && items.isEmpty {
+            if hasLoaded && !isLoading && items.isEmpty, let errorMessage {
+                ErrorState(message: errorMessage) { await reload() }
+            } else if hasLoaded && !isLoading && items.isEmpty {
                 ContentUnavailableView(
                     errorMessage == nil ? "Nothing here yet" : "Couldn't load",
                     systemImage: errorMessage == nil ? "film.stack" : "exclamationmark.triangle",
@@ -55,6 +57,9 @@ struct CollectionView: View {
             await reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
+            Task { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .contentShouldRefresh)) { _ in
             Task { await reload() }
         }
     }
@@ -73,7 +78,8 @@ struct CollectionView: View {
             }
             errorMessage = nil
         } catch {
-            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return }
+            if Task.isCancelled || AuthWatch.isCancellation(error) { return }
+            AuthWatch.report(error)
             errorMessage = error.localizedDescription
             AppLog.shared.log("\(collection.title): \(error.localizedDescription)", level: .error)
         }

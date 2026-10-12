@@ -21,10 +21,11 @@ struct ItemDetailView: View {
                 content(item)
                     .transition(.opacity)
             } else if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .padding(.top, 140)
-                    .padding(.horizontal, 20)
+                ErrorState(message: errorMessage) {
+                    self.errorMessage = nil
+                    await load()
+                }
+                .padding(.top, 120)
             }
         }
         .background(Theme.background.ignoresSafeArea())
@@ -58,6 +59,16 @@ struct ItemDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
             // Show the new resume position and watched state.
             Task { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .contentShouldRefresh)) { _ in
+            Task {
+                if item == nil {
+                    errorMessage = nil
+                    await load()
+                } else {
+                    await reload()
+                }
+            }
         }
         .fullScreenCover(item: $playback) { session in
             PlayerView(session: session)
@@ -247,8 +258,10 @@ struct ItemDetailView: View {
             let loaded = try await api.item(itemID)
             withAnimation(.easeOut(duration: 0.25)) { item = loaded }
         } catch {
-            errorMessage = "Could not load item: \(error.localizedDescription)"
-            AppLog.shared.log(errorMessage ?? "", level: .error)
+            guard !AuthWatch.isCancellation(error) else { return }
+            AuthWatch.report(error)
+            errorMessage = error.localizedDescription
+            AppLog.shared.log("Could not load item: \(error.localizedDescription)", level: .error)
         }
     }
 
