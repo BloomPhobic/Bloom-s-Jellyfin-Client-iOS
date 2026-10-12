@@ -106,6 +106,9 @@ struct SignedInGate<Content: View>: View {
                 }
             } else if let client = store.client, let session = store.session, !store.isAddingAccount {
                 content(LibraryAPI(client: client, userID: session.userID))
+                    // A new identity per account: switching users starts the page fresh and reloads it,
+                    // instead of keeping the previous user's rows until a refresh.
+                    .id(session.userID)
             } else {
                 LoginView()
             }
