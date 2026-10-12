@@ -5,6 +5,22 @@ import SwiftUI
 enum BrowseRoute: Hashable {
     case item(BaseItemDto)
     case library(BaseItemDto)
+    case collection(HomeCollection)
+}
+
+/// The Home rows that have a "see all" page.
+enum HomeCollection: String, Hashable {
+    case continueWatching
+    case nextUp
+    case history
+
+    var title: String {
+        switch self {
+        case .continueWatching: return "Continue watching"
+        case .nextUp: return "Next up"
+        case .history: return "Watch history"
+        }
+    }
 }
 
 /// Opens the right screen for an item: shows and seasons get the episode browser,
@@ -14,9 +30,19 @@ struct BrowseDestination: View {
     let api: LibraryAPI
 
     var body: some View {
+        Group {
+            destination
+        }
+        .tabBarClearance()
+    }
+
+    @ViewBuilder
+    private var destination: some View {
         switch route {
         case .library(let library):
             LibraryView(api: api, parent: library)
+        case .collection(let collection):
+            CollectionView(api: api, collection: collection)
         case .item(let item):
             switch item.type {
             case .series:
@@ -69,19 +95,24 @@ struct SignedInGate<Content: View>: View {
     @ViewBuilder let content: (LibraryAPI) -> Content
 
     var body: some View {
-        if store.server == nil {
-            AddServerView()
-        } else if store.route == nil {
-            if store.hasResolved && !store.isResolving {
-                ServerUnreachableView()
+        Group {
+            if store.server == nil {
+                AddServerView()
+            } else if store.route == nil {
+                if store.hasResolved && !store.isResolving {
+                    ServerUnreachableView()
+                } else {
+                    ConnectingView()
+                }
+            } else if let client = store.client, let session = store.session, !store.isAddingAccount {
+                content(LibraryAPI(client: client, userID: session.userID))
             } else {
-                ConnectingView()
+                LoginView()
             }
-        } else if let client = store.client, let session = store.session {
-            content(LibraryAPI(client: client, userID: session.userID))
-        } else {
-            LoginView()
         }
+        .tabBarClearance()
+        .animation(.easeInOut(duration: 0.3), value: store.session?.userID)
+        .animation(.easeInOut(duration: 0.3), value: store.isAddingAccount)
     }
 }
 
@@ -127,10 +158,10 @@ struct HomeView: View {
                     libraryPills
                 }
                 if !continueRow.isEmpty {
-                    row("Continue watching", items: continueRow, wide: true)
+                    row("Continue watching", items: continueRow, wide: true, seeAll: .continueWatching)
                 }
                 if !nextUpRow.isEmpty {
-                    row("Next up", items: nextUpRow, wide: true)
+                    row("Next up", items: nextUpRow, wide: true, seeAll: .nextUp)
                 }
                 ForEach(libraries, id: \.id) { library in
                     if let items = latest[library.id ?? ""], !items.isEmpty {
@@ -138,7 +169,7 @@ struct HomeView: View {
                     }
                 }
                 if !history.isEmpty {
-                    row("Watch history", items: history, wide: true)
+                    row("Watch history", items: history, wide: true, seeAll: .history)
                 }
                 if lastLoaded == nil && errorMessage == nil {
                     ProgressView()
@@ -191,22 +222,7 @@ struct HomeView: View {
                     .foregroundStyle(Theme.text)
             }
             Spacer()
-            Menu {
-                if let session = store.session {
-                    Text("Signed in as \(session.userName)")
-                }
-                Button("Sign out", role: .destructive) {
-                    Task { await store.signOut() }
-                }
-            } label: {
-                Text(String(store.session?.userName.prefix(1) ?? "?").uppercased())
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 40, height: 40)
-                    .background(Circle().fill(Theme.raised2))
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-            }
-            .accessibilityLabel("Account")
+            AccountMenu()
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
@@ -292,9 +308,30 @@ struct HomeView: View {
         }
     }
 
-    private func row(_ title: String, items: [BaseItemDto], wide: Bool) -> some View {
+    private func row(_ title: String, items: [BaseItemDto], wide: Bool, seeAll: HomeCollection? = nil) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(text: title)
+            if let seeAll {
+                NavigationLink(value: BrowseRoute.collection(seeAll)) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.text3)
+                        Spacer()
+                        Text("See all")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .padding(.horizontal, 20)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(title), see all")
+            } else {
+                SectionTitle(text: title)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(items, id: \.id) { item in

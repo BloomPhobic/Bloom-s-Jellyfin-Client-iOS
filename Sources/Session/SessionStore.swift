@@ -4,15 +4,23 @@ import Network
 import Observation
 import UIKit
 
-/// Holds the saved server, the address currently in use, and the signed-in session.
-/// The access token is stored in the Keychain; it works on every address of the same server.
+/// Holds the saved server, the address currently in use, and the signed-in accounts.
+/// Access tokens are stored in the Keychain; a token works on every address of the same server.
 @MainActor
 @Observable
 final class SessionStore {
-    struct SavedSession: Codable {
+    struct SavedSession: Codable, Identifiable, Equatable {
         let accessToken: String
         let userID: String
         let userName: String
+        /// Each account signs in with its own device ID, so the server never treats one user's
+        /// sign-in as replacing another's on this phone. nil = signed in before accounts existed
+        /// (uses the install's ID).
+        var deviceID: String?
+        /// Profile picture tag, if the user has one.
+        var imageTag: String?
+
+        var id: String { userID }
     }
 
     struct Route: Equatable {
@@ -36,7 +44,9 @@ final class SessionStore {
         }
     }
 
-    private static let keychainKey = "session"
+    private static let accountsKey = "accounts"
+    private static let legacySessionKey = "session"
+    private static let currentUserKey = "currentUserID"
     private static let deviceIDKey = "deviceID"
 
     private(set) var server: ServerRecord?
@@ -45,7 +55,12 @@ final class SessionStore {
     private(set) var isResolving = false
     private(set) var hasResolved = false
     private(set) var results: [String: ProbeResult] = [:]
+    /// Every signed-in account on this server.
+    private(set) var accounts: [SavedSession] = []
+    /// The account in use.
     private(set) var session: SavedSession?
+    /// The login screen is open to add another account while one is signed in.
+    var isAddingAccount = false
     /// Client for the current route, with the access token when signed in.
     private(set) var client: JellyfinClient?
 
@@ -223,9 +238,10 @@ final class SessionStore {
         }
         let record = ServerRecord(id: id, name: name, addresses: [address])
         record.save()
-        if session != nil {
-            clearSession()
-        }
+        // Accounts belong to the previous server.
+        accounts = []
+        saveAccounts()
+        session = nil
         server = record
         results = [address: result]
         route = Route(address: address, milliseconds: ms)
@@ -287,8 +303,8 @@ final class SessionStore {
 
     /// Signs out and removes the server and all its addresses.
     func forgetServer() async {
-        if session != nil {
-            await signOut()
+        for account in accounts {
+            await remove(account)
         }
         ServerRecord.delete()
         server = nil
@@ -301,14 +317,24 @@ final class SessionStore {
 
     // MARK: - Sign in
 
-    /// A client without an access token, for the login screen.
+    /// A client without an access token, for the login screen. Each one has a fresh device ID,
+    /// which the account keeps if the sign-in succeeds.
     func loginClient() throws -> JellyfinClient {
         guard let route, let url = URL(string: route.address) else { throw SessionError.notConnected }
-        return Self.makeClient(url: url, accessToken: nil)
+        return Self.makeClient(url: url, accessToken: nil, deviceID: UUID().uuidString)
     }
 
     func publicUsers() async throws -> [UserDto] {
         try await loginClient().send(Paths.getPublicUsers).value
+    }
+
+    /// A user's profile picture on the current address.
+    func userImageURL(userID: String, tag: String?) -> URL? {
+        guard let tag, let client = try? loginClient() else { return nil }
+        var parameters = Paths.GetUserImageParameters()
+        parameters.userID = userID
+        parameters.tag = tag
+        return client.url(with: Paths.getUserImage(parameters: parameters))
     }
 
     func isQuickConnectEnabled() async -> Bool {
@@ -337,60 +363,119 @@ final class SessionStore {
         guard let token = newClient.accessToken, let userID = result.user?.id else {
             throw SessionError.incompleteResponse
         }
-        let saved = SavedSession(accessToken: token, userID: userID, userName: result.user?.name ?? "?")
+        let saved = SavedSession(
+            accessToken: token,
+            userID: userID,
+            userName: result.user?.name ?? "?",
+            deviceID: newClient.configuration.deviceID,
+            imageTag: result.user?.primaryImageTag
+        )
         AppLog.shared.addSecret(token)
-        if let data = try? JSONEncoder().encode(saved) {
-            Keychain.set(data, for: Self.keychainKey)
-        }
-        session = saved
-        sessionChecked = true
-        rebuildClient()
-        AppLog.shared.log("Signed in as \(saved.userName) with \(method) via \(route?.address ?? "?")")
+        accounts.removeAll { $0.userID == userID }
+        accounts.append(saved)
+        saveAccounts()
+        isAddingAccount = false
+        activate(saved, checked: true)
+        AppLog.shared.log("Signed in as \(saved.userName) with \(method) via \(route?.address ?? "?") (\(accounts.count) account(s))")
     }
 
+    /// Switches to another signed-in account.
+    func switchAccount(to account: SavedSession) {
+        guard account != session else { return }
+        isAddingAccount = false
+        activate(account, checked: false)
+        AppLog.shared.log("Switched to \(account.userName)")
+        Task { await checkSavedSession() }
+    }
+
+    /// Signs the current account out; another signed-in account takes over if there is one.
     func signOut() async {
-        if let client, session != nil {
+        guard let session else { return }
+        await remove(session)
+    }
+
+    /// Signs an account out on the server and forgets it here.
+    func remove(_ account: SavedSession) async {
+        if let route, let url = URL(string: route.address) {
+            let accountClient = Self.makeClient(url: url, accessToken: account.accessToken, deviceID: account.deviceID ?? Self.installDeviceID)
             do {
-                try await client.signOut()
+                try await accountClient.signOut()
             } catch {
                 AppLog.shared.log("Sign-out request failed: \(error.localizedDescription)", level: .warning)
             }
         }
-        clearSession()
-        AppLog.shared.log("Signed out")
+        forget(account)
+        AppLog.shared.log("Signed out \(account.userName)")
     }
 
-    private func clearSession() {
-        Keychain.delete(Self.keychainKey)
-        session = nil
+    /// Drops an account locally (token already invalid, or after signing out).
+    private func forget(_ account: SavedSession) {
+        accounts.removeAll { $0.userID == account.userID }
+        saveAccounts()
+        if session?.userID == account.userID {
+            if let next = accounts.first {
+                activate(next, checked: false)
+                Task { await checkSavedSession() }
+            } else {
+                session = nil
+                UserDefaults.standard.removeObject(forKey: Self.currentUserKey)
+                rebuildClient()
+            }
+        }
+    }
+
+    private func activate(_ account: SavedSession, checked: Bool) {
+        session = account
+        sessionChecked = checked
+        UserDefaults.standard.set(account.userID, forKey: Self.currentUserKey)
         rebuildClient()
     }
 
-    private func restoreSession() {
-        // Older builds saved the server URL in the session too; it is ignored when decoding.
-        guard let data = Keychain.data(for: Self.keychainKey),
-              let saved = try? JSONDecoder().decode(SavedSession.self, from: data) else {
-            return
+    private func saveAccounts() {
+        if accounts.isEmpty {
+            Keychain.delete(Self.accountsKey)
+        } else if let data = try? JSONEncoder().encode(accounts) {
+            Keychain.set(data, for: Self.accountsKey)
         }
-        AppLog.shared.addSecret(saved.accessToken)
-        session = saved
-        AppLog.shared.log("Restored session for \(saved.userName)")
     }
 
-    /// Once per launch, makes sure the saved token still works. A token revoked on the server
-    /// (for example from the Jellyfin dashboard) signs the app out; network errors keep it.
+    private func restoreSession() {
+        if let data = Keychain.data(for: Self.accountsKey),
+           let saved = try? JSONDecoder().decode([SavedSession].self, from: data) {
+            accounts = saved
+        } else if let data = Keychain.data(for: Self.legacySessionKey),
+                  let old = try? JSONDecoder().decode(SavedSession.self, from: data) {
+            // Builds before multiple accounts kept a single session.
+            accounts = [old]
+            saveAccounts()
+            Keychain.delete(Self.legacySessionKey)
+            AppLog.shared.log("Moved the saved sign-in to the account list")
+        }
+        for account in accounts {
+            AppLog.shared.addSecret(account.accessToken)
+        }
+        let currentID = UserDefaults.standard.string(forKey: Self.currentUserKey)
+        session = accounts.first { $0.userID == currentID } ?? accounts.first
+        if let session {
+            AppLog.shared.log("Restored session for \(session.userName) (\(accounts.count) account(s))")
+        }
+    }
+
+    /// Once per account switch or launch, makes sure the token still works. A token revoked on the
+    /// server (for example from the Jellyfin dashboard) removes that account; network errors keep it.
     private func checkSavedSession() async {
-        guard !sessionChecked, session != nil, let client,
+        guard !sessionChecked, let current = session, let client,
               let url = client.url(with: Paths.getCurrentUser, queryAPIKey: true) else { return }
         do {
             let (_, response) = try await URLSession.shared.data(from: url)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard session?.userID == current.userID else { return }
             sessionChecked = true
             if status == 401 || status == 403 {
-                AppLog.shared.log("The saved sign-in is no longer valid (HTTP \(status)). Please sign in again.", level: .warning)
-                clearSession()
+                AppLog.shared.log("The sign-in for \(current.userName) is no longer valid (HTTP \(status)). Please sign in again.", level: .warning)
+                forget(current)
             } else {
-                AppLog.shared.log("Saved sign-in OK (HTTP \(status))")
+                AppLog.shared.log("Saved sign-in OK for \(current.userName) (HTTP \(status))")
             }
         } catch {
             AppLog.shared.log("Couldn't check the saved sign-in: \(error.localizedDescription)", level: .warning)
@@ -402,10 +487,10 @@ final class SessionStore {
             client = nil
             return
         }
-        client = Self.makeClient(url: url, accessToken: session?.accessToken)
+        client = Self.makeClient(url: url, accessToken: session?.accessToken, deviceID: session?.deviceID ?? Self.installDeviceID)
     }
 
-    private static func makeClient(url: URL, accessToken: String?) -> JellyfinClient {
+    private static func makeClient(url: URL, accessToken: String?, deviceID: String) -> JellyfinClient {
         let configuration = JellyfinClient.Configuration(
             url: url,
             accessToken: accessToken,
@@ -417,8 +502,9 @@ final class SessionStore {
         return JellyfinClient(configuration: configuration)
     }
 
-    /// A random ID that stays the same for this install, so the server sees one device.
-    private static var deviceID: String {
+    /// A random ID that stays the same for this install. Used by accounts signed in before each
+    /// account had its own.
+    private static var installDeviceID: String {
         if let existing = UserDefaults.standard.string(forKey: deviceIDKey) {
             return existing
         }

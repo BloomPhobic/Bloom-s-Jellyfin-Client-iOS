@@ -67,6 +67,13 @@ struct RootView: View {
             }
             .ignoresSafeArea(.keyboard)
         }
+        .onChange(of: store.isAddingAccount) {
+            // The login screen for another account shows on Home.
+            if store.isAddingAccount {
+                selection = .home
+                homeNavigator.path = []
+            }
+        }
         .onChange(of: store.session?.userID) {
             // Pages from a previous sign-in (or server) shouldn't stay open.
             homeNavigator.path = []
@@ -90,12 +97,19 @@ struct RootView: View {
 }
 
 private extension View {
-    /// Hides the system tab bar and keeps content clear of the floating one.
+    /// Hides the system tab bar; the floating one replaces it.
     func tabBarSpace() -> some View {
         toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 76)
-            }
+    }
+}
+
+extension View {
+    /// Blank space under a page, as tall as the floating tab bar, so the bar never covers the
+    /// last items. Applied to every page (pushed pages don't inherit it from their stack).
+    func tabBarClearance() -> some View {
+        safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: 84)
+        }
     }
 }
 

@@ -97,6 +97,36 @@ struct Pill: View {
     }
 }
 
+/// The app's mark: a play symbol on an accent rounded square, gently "breathing".
+struct LogoMark: View {
+    var size: CGFloat = 76
+    var animated = true
+
+    @State private var breathe = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(Color.accentColor)
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: "play.fill")
+                    .font(.system(size: size * 0.38, weight: .bold))
+                    .foregroundStyle(Theme.onAccent)
+                    .offset(x: size * 0.03)
+            }
+            .shadow(color: Color.accentColor.opacity(0.4), radius: size * 0.22)
+            // Only a scale change: cheap for the GPU, unlike animating the shadow.
+            .scaleEffect(breathe ? 1.04 : 1)
+            .onAppear {
+                guard animated else { return }
+                withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
+                    breathe = true
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
 /// Thin accent progress bar on a faint track.
 struct ProgressBar: View {
     let fraction: Double

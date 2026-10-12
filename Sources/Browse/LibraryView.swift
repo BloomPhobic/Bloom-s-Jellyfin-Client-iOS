@@ -12,7 +12,10 @@ struct LibraryView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var loadID = 0
-    @State private var loadedQuery: LibraryQuery?
+    @State private var loadedKey: LoadKey?
+    @State private var searchText = ""
+    /// The search text after a short pause in typing.
+    @State private var searchTerm = ""
 
     private static let pageSize = 100
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3)
@@ -61,7 +64,7 @@ struct LibraryView: View {
                 ContentUnavailableView(
                     errorMessage == nil ? "Nothing here" : "Couldn't load",
                     systemImage: errorMessage == nil ? "film.stack" : "exclamationmark.triangle",
-                    description: Text(errorMessage ?? (query.unplayedOnly || query.favouritesOnly ? "Try turning off the filters." : ""))
+                    description: Text(errorMessage ?? (!searchTerm.isEmpty ? "Nothing matches \"\(searchTerm)\"." : query.unplayedOnly || query.favouritesOnly ? "Try turning off the filters." : ""))
                 )
             }
         }
@@ -75,13 +78,25 @@ struct LibraryView: View {
                 optionsMenu
             }
         }
-        .task(id: query) {
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search \(parent.name ?? "this library")")
+        .task(id: searchText) {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            searchTerm = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        .task(id: LoadKey(query: query, search: searchTerm)) {
             // .task also runs when coming back from a pushed page; keep the grid (and scroll position) then.
-            guard query != loadedQuery else { return }
-            loadedQuery = query
+            let key = LoadKey(query: query, search: searchTerm)
+            guard key != loadedKey else { return }
+            loadedKey = key
             query.save(for: parent.id)
             await reload()
         }
+    }
+
+    private struct LoadKey: Hashable {
+        let query: LibraryQuery
+        let search: String
     }
 
     private var countText: String {
@@ -91,7 +106,7 @@ struct LibraryView: View {
         case .tvshows: noun = total == 1 ? "show" : "shows"
         default: noun = total == 1 ? "item" : "items"
         }
-        return "\(total) \(noun)"
+        return searchTerm.isEmpty ? "\(total) \(noun)" : "\(total) \(noun) matching \"\(searchTerm)\""
     }
 
     /// Chips for every non-default option, each removable, plus Reset. Shown above the grid.
@@ -163,7 +178,7 @@ struct LibraryView: View {
         isLoading = true
         errorMessage = nil
         do {
-            let page = try await api.items(in: parent, query: query, startIndex: 0, limit: Self.pageSize)
+            let page = try await api.items(in: parent, query: query, searchTerm: searchTerm, startIndex: 0, limit: Self.pageSize)
             guard id == loadID else { return }
             items = page.items
             total = page.total
@@ -179,7 +194,7 @@ struct LibraryView: View {
         let id = loadID
         isLoading = true
         do {
-            let page = try await api.items(in: parent, query: query, startIndex: items.count, limit: Self.pageSize)
+            let page = try await api.items(in: parent, query: query, searchTerm: searchTerm, startIndex: items.count, limit: Self.pageSize)
             guard id == loadID else { return }
             items += page.items
             total = page.total

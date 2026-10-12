@@ -16,20 +16,20 @@ struct LibraryAPI {
         return try await client.send(Paths.getUserViews(parameters: parameters)).value.items ?? []
     }
 
-    func resumeItems() async throws -> [BaseItemDto] {
+    func resumeItems(limit: Int = 20) async throws -> [BaseItemDto] {
         var parameters = Paths.GetResumeItemsParameters()
         parameters.userID = userID
-        parameters.limit = 20
+        parameters.limit = limit
         parameters.fields = Self.listFields
         parameters.mediaTypes = [.video]
         parameters.enableUserData = true
         return try await client.send(Paths.getResumeItems(parameters: parameters)).value.items ?? []
     }
 
-    func nextUp() async throws -> [BaseItemDto] {
+    func nextUp(limit: Int = 20) async throws -> [BaseItemDto] {
         var parameters = Paths.GetNextUpParameters()
         parameters.userID = userID
-        parameters.limit = 20
+        parameters.limit = limit
         parameters.fields = Self.listFields
         parameters.enableUserData = true
         // Episodes already in progress are in Continue watching.
@@ -39,6 +39,11 @@ struct LibraryAPI {
 
     /// Movies and episodes the user finished, most recent first.
     func watchHistory() async throws -> [BaseItemDto] {
+        try await watchHistory(startIndex: 0, limit: 20).items
+    }
+
+    /// One page of the watch history, with the total count.
+    func watchHistory(startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
         var parameters = Paths.GetItemsParameters()
         parameters.userID = userID
         parameters.isRecursive = true
@@ -46,10 +51,13 @@ struct LibraryAPI {
         parameters.filters = [.isPlayed]
         parameters.sortBy = [.datePlayed]
         parameters.sortOrder = [.descending]
-        parameters.limit = 20
+        parameters.startIndex = startIndex
+        parameters.limit = limit
+        parameters.enableTotalRecordCount = true
         parameters.fields = Self.listFields
         parameters.enableUserData = true
-        return try await client.send(Paths.getItems(parameters: parameters)).value.items ?? []
+        let result = try await client.send(Paths.getItems(parameters: parameters)).value
+        return (result.items ?? [], result.totalRecordCount ?? 0)
     }
 
     /// Where to pick up a show: the episode in progress, or the next unwatched one.
@@ -76,8 +84,11 @@ struct LibraryAPI {
     // MARK: - Libraries and search
 
     /// One page of a library, collection or folder. Returns the items and the total count.
-    func items(in parent: BaseItemDto, query: LibraryQuery, startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
+    func items(in parent: BaseItemDto, query: LibraryQuery, searchTerm: String? = nil, startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
         var parameters = Paths.GetItemsParameters()
+        if let searchTerm, !searchTerm.isEmpty {
+            parameters.searchTerm = searchTerm
+        }
         parameters.userID = userID
         parameters.parentID = parent.id
         parameters.startIndex = startIndex

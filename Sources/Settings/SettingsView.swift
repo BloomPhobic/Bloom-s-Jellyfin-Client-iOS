@@ -13,6 +13,7 @@ struct SettingsView: View {
                 Section("Server") {
                     NavigationLink {
                         ConnectionView()
+                            .tabBarClearance()
                     } label: {
                         LabeledContent("Connection") {
                             if let route = store.route {
@@ -22,9 +23,10 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    if let session = store.session {
-                        LabeledContent("Signed in as", value: session.userName)
-                    }
+                }
+
+                if !store.accounts.isEmpty {
+                    AccountsSection()
                 }
 
                 Section("Accent colour") {
@@ -52,6 +54,7 @@ struct SettingsView: View {
                 Section("Diagnostics") {
                     NavigationLink("Log") {
                         LogView()
+                            .tabBarClearance()
                     }
                     Button("Run Keychain test") {
                         KeychainCheck.run()
@@ -63,6 +66,7 @@ struct SettingsView: View {
                 }
             }
             .themedBackground()
+            .tabBarClearance()
             .navigationTitle("Settings")
         }
     }
