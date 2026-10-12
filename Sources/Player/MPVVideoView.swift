@@ -5,11 +5,12 @@ import UIKit
 struct MPVVideoView: UIViewRepresentable {
     let player: MPVPlayer
     let url: URL
+    var startSeconds: Double = 0
 
     func makeUIView(context: Context) -> MPVHostView {
         let view = MPVHostView(videoLayer: player.layer)
-        view.onFirstLayout = { [player, url] in
-            player.start(url: url)
+        view.onFirstLayout = { [player, url, startSeconds] in
+            player.start(url: url, startSeconds: startSeconds)
         }
         return view
     }

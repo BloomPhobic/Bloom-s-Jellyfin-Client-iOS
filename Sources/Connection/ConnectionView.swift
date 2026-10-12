@@ -10,43 +10,35 @@ struct ConnectionView: View {
     @State private var confirmForget = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let server = store.server {
-                    serverSection(name: server.name)
-                    addressSection(server.addresses)
-                    accountSection
-                    Section {
-                        Button("Forget this server", role: .destructive) {
-                            confirmForget = true
-                        }
-                    }
-                } else {
-                    Section {
-                        Text("No server added yet. Add one on the Play tab.")
-                            .foregroundStyle(.secondary)
+        List {
+            if let server = store.server {
+                serverSection(name: server.name)
+                addressSection(server.addresses)
+                accountSection
+                Section {
+                    Button("Forget this server", role: .destructive) {
+                        confirmForget = true
                     }
                 }
-
-                Section("Self-tests") {
-                    Button("Run Keychain test again") {
-                        KeychainCheck.run()
-                    }
+            } else {
+                Section {
+                    Text("No server added yet. Add one on the Home tab.")
+                        .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Connection")
-            .toolbar {
-                if store.server != nil {
-                    EditButton()
-                }
+        }
+        .navigationTitle("Connection")
+        .toolbar {
+            if store.server != nil {
+                EditButton()
             }
-            .confirmationDialog("Forget this server?", isPresented: $confirmForget, titleVisibility: .visible) {
-                Button("Sign out and forget", role: .destructive) {
-                    Task { await store.forgetServer() }
-                }
-            } message: {
-                Text("This removes all of its addresses and signs you out.")
+        }
+        .confirmationDialog("Forget this server?", isPresented: $confirmForget, titleVisibility: .visible) {
+            Button("Sign out and forget", role: .destructive) {
+                Task { await store.forgetServer() }
             }
+        } message: {
+            Text("This removes all of its addresses and signs you out.")
         }
     }
 

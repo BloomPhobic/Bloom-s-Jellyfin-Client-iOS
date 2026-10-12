@@ -14,7 +14,7 @@ struct PlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            MPVVideoView(player: player, url: request.url)
+            MPVVideoView(player: player, url: request.url, startSeconds: request.startSeconds)
                 .ignoresSafeArea()
             Color.clear
                 .contentShape(Rectangle())

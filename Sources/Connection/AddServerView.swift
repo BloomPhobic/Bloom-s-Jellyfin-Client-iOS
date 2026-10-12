@@ -22,7 +22,7 @@ struct AddServerView: View {
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
                 } else {
-                    Text("You can add more addresses for the same server later (for example your local network and Tailscale) in the Connection tab.")
+                    Text("You can add more addresses for the same server later (for example your local network and Tailscale) in Settings → Connection.")
                 }
             }
 

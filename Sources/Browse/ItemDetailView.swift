@@ -5,39 +5,80 @@ struct PlaybackRequest: Identifiable {
     let id = UUID()
     let url: URL
     let title: String
+    var startSeconds: Double = 0
 }
 
-/// Shows the technical details of an item's files and starts direct playback.
+/// A movie, episode or video: artwork, details, Play/Resume, and watched and favourite toggles.
 struct ItemDetailView: View {
-    let client: JellyfinClient
-    let userID: String
+    let api: LibraryAPI
     let itemID: String
 
     @State private var item: BaseItemDto?
     @State private var errorMessage: String?
     @State private var playback: PlaybackRequest?
-    @AppStorage(PlayerSettings.hdrPassthroughKey) private var hdrPassthrough = true
-    @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
 
     var body: some View {
         List {
-            if let errorMessage {
-                Text(errorMessage).foregroundStyle(.red)
-            }
             if let item {
-                ForEach(Array((item.mediaSources ?? []).enumerated()), id: \.offset) { _, source in
-                    sourceSection(item: item, source: source)
+                Section {
+                    DetailHeader(item: item, api: api)
+                    playButtons(item)
+                    if let binding = Binding($item) {
+                        UserDataButtons(api: api, item: binding)
+                    }
+                    if let overview = item.overview, !overview.isEmpty {
+                        ExpandableText(text: overview)
+                    }
+                    if let genres = item.genres, !genres.isEmpty {
+                        Text(genres.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Section("Player options (apply on next play)") {
-                    Toggle("HDR passthrough", isOn: $hdrPassthrough)
-                    Toggle("Hardware decoding", isOn: $hardwareDecoding)
+                .listRowSeparator(.hidden)
+
+                if item.type == .episode, let seriesID = item.seriesID {
+                    Section {
+                        NavigationLink(value: BrowseRoute.item(Self.seriesLink(id: seriesID, name: item.seriesName))) {
+                            Label("Go to \(item.seriesName ?? "show")", systemImage: "tv")
+                        }
+                    }
                 }
-            } else if errorMessage == nil {
+
+                let sources = item.mediaSources ?? []
+                ForEach(Array(sources.enumerated()), id: \.offset) { _, source in
+                    Section {
+                        DisclosureGroup("Technical details") {
+                            ForEach(Array(MediaSummary.lines(for: source).enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        if sources.count > 1 {
+                            Button {
+                                play(item: item, source: source, from: 0)
+                            } label: {
+                                Label("Play this version", systemImage: "play")
+                            }
+                        }
+                    } header: {
+                        Text(source.name ?? "Media source")
+                    }
+                }
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .foregroundStyle(.red)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(item?.name ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if item == nil && errorMessage == nil {
                 ProgressView()
             }
         }
-        .navigationTitle(item?.name ?? "Details")
-        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .fullScreenCover(item: $playback) { request in
             PlayerView(request: request)
@@ -45,49 +86,201 @@ struct ItemDetailView: View {
     }
 
     @ViewBuilder
-    private func sourceSection(item: BaseItemDto, source: MediaSourceInfo) -> some View {
-        Section {
-            Button {
-                play(item: item, source: source)
-            } label: {
-                Label("Play (direct)", systemImage: "play.fill")
+    private func playButtons(_ item: BaseItemDto) -> some View {
+        if let source = item.mediaSources?.first {
+            let resume = item.resumeSeconds
+            HStack {
+                Button {
+                    play(item: item, source: source, from: resume)
+                } label: {
+                    Label(resume > 0 ? "Resume \(Self.timeText(resume))" : "Play", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                if resume > 0 {
+                    Button {
+                        play(item: item, source: source, from: 0)
+                    } label: {
+                        Label("From start", systemImage: "backward.end.fill")
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
-            ForEach(Array(MediaSummary.lines(for: source).enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
-            }
-        } header: {
-            Text(source.name ?? "Media source")
+            .controlSize(.large)
+        } else {
+            Text("No playable file.")
+                .foregroundStyle(.secondary)
         }
     }
 
     private func load() async {
         guard item == nil else { return }
         do {
-            item = try await client.send(Paths.getItem(itemID: itemID, userID: userID)).value
+            item = try await api.item(itemID)
         } catch {
             errorMessage = "Could not load item: \(error.localizedDescription)"
             AppLog.shared.log(errorMessage ?? "", level: .error)
         }
     }
 
-    private func play(item: BaseItemDto, source: MediaSourceInfo) {
-        let request = Paths.getVideoStream(
-            itemID: itemID,
-            parameters: .init(isStatic: true, mediaSourceID: source.id)
-        )
-        guard let url = client.url(with: request, queryAPIKey: true) else {
+    private func play(item: BaseItemDto, source: MediaSourceInfo, from startSeconds: Double) {
+        guard let url = api.streamURL(itemID: itemID, mediaSourceID: source.id) else {
             errorMessage = "Could not build the stream URL."
             return
         }
         let log = AppLog.shared
-        log.log("Play: \(item.name ?? itemID) [\(source.name ?? "source")]")
+        let title = [item.seriesName, item.episodeLabel, item.name].compactMap { $0 }.joined(separator: " · ")
+        log.log("Play: \(title) [\(source.name ?? "source")]" + (startSeconds > 0 ? " from \(Self.timeText(startSeconds))" : ""))
         for line in MediaSummary.lines(for: source) {
             log.log("  \(line)")
         }
-        log.log("  Options: HDR passthrough \(hdrPassthrough ? "on" : "off"), hardware decoding \(hardwareDecoding ? "on" : "off")")
-        playback = PlaybackRequest(url: url, title: item.name ?? "")
+        log.log("  Options: HDR passthrough \(PlayerSettings.hdrPassthrough ? "on" : "off"), hardware decoding \(PlayerSettings.hardwareDecoding ? "on" : "off")")
+        playback = PlaybackRequest(url: url, title: item.name ?? "", startSeconds: startSeconds)
+    }
+
+    /// Enough of a show for navigation; the show page loads the rest.
+    private static func seriesLink(id: String, name: String?) -> BaseItemDto {
+        var series = BaseItemDto()
+        series.id = id
+        series.name = name
+        series.type = .series
+        return series
+    }
+
+    static func timeText(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+            : String(format: "%d:%02d", minutes, secs)
+    }
+}
+
+/// Backdrop, poster, title and the one-line facts (year, runtime, rating).
+struct DetailHeader: View {
+    let item: BaseItemDto
+    let api: LibraryAPI
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let backdrop = Artwork.backdrop(item) {
+                ArtworkFrame(url: api.imageURL(backdrop, maxWidth: 1200), aspectRatio: 16 / 9)
+            } else if item.type == .episode {
+                ArtworkFrame(url: api.imageURL(Artwork.landscape(item), maxWidth: 1200), aspectRatio: 16 / 9)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                if item.type != .episode {
+                    ArtworkFrame(url: api.imageURL(Artwork.poster(item), maxWidth: 300), aspectRatio: 2 / 3)
+                        .frame(width: 90)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    if item.type == .episode, let seriesName = item.seriesName {
+                        Text([seriesName, item.episodeLabel].compactMap { $0 }.joined(separator: " · "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(item.name ?? "")
+                        .font(.title2.bold())
+                    if !facts.isEmpty {
+                        Text(facts)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var facts: String {
+        var parts: [String] = []
+        if let year = item.productionYear {
+            if item.type == .series, let end = item.endDate.map({ Calendar.current.component(.year, from: $0) }), end != year {
+                parts.append("\(year)–\(end)")
+            } else {
+                parts.append(String(year))
+            }
+        }
+        if let runtime = item.runtimeText, item.type != .series {
+            parts.append(runtime)
+        }
+        if let rating = item.officialRating {
+            parts.append(rating)
+        }
+        if let score = item.communityRating {
+            parts.append(String(format: "★ %.1f", score))
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Watched and favourite toggles. Updates the item with what the server returns.
+struct UserDataButtons: View {
+    let api: LibraryAPI
+    @Binding var item: BaseItemDto
+    var onChange: (() -> Void)?
+
+    @State private var isUpdating = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button {
+                Task { await update(played: !item.isPlayed) }
+            } label: {
+                Label(item.isPlayed ? "Watched" : "Mark watched",
+                      systemImage: item.isPlayed ? "checkmark.circle.fill" : "checkmark.circle")
+            }
+            Button {
+                Task { await update(favorite: !item.isFavorite) }
+            } label: {
+                Label(item.isFavorite ? "Favourite" : "Add to favourites",
+                      systemImage: item.isFavorite ? "heart.fill" : "heart")
+            }
+        }
+        .buttonStyle(.bordered)
+        .disabled(isUpdating)
+    }
+
+    private func update(played: Bool? = nil, favorite: Bool? = nil) async {
+        guard let id = item.id else { return }
+        isUpdating = true
+        defer { isUpdating = false }
+        do {
+            if let played {
+                item.userData = try await api.setPlayed(played, itemID: id)
+                AppLog.shared.log("Marked \(item.name ?? id) as \(played ? "watched" : "unwatched")")
+            }
+            if let favorite {
+                item.userData = try await api.setFavorite(favorite, itemID: id)
+                AppLog.shared.log("\(favorite ? "Added" : "Removed") \(item.name ?? id) \(favorite ? "to" : "from") favourites")
+            }
+            onChange?()
+        } catch {
+            AppLog.shared.log("Couldn't update \(item.name ?? id): \(error.localizedDescription)", level: .error)
+        }
+    }
+}
+
+/// Text that shows a few lines, with "More" to expand.
+struct ExpandableText: View {
+    let text: String
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text)
+                .font(.callout)
+                .lineLimit(isExpanded ? nil : 4)
+            if text.count > 200 {
+                Button(isExpanded ? "Less" : "More") {
+                    withAnimation { isExpanded.toggle() }
+                }
+                .font(.callout.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+            }
+        }
     }
 }
 

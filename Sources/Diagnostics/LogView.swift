@@ -5,42 +5,45 @@ struct LogView: View {
     private var log: AppLog { AppLog.shared }
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                List(log.entries) { entry in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(entry.date, format: .dateTime.hour().minute().second()) · \(entry.level.rawValue)")
-                            .font(.caption2)
-                            .foregroundStyle(color(for: entry.level))
-                        Text(entry.message)
-                            .font(.system(.footnote, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
-                    .id(entry.id)
+        ScrollViewReader { proxy in
+            List(log.entries) { entry in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(entry.date, format: .dateTime.hour().minute().second()) · \(entry.level.rawValue)")
+                        .font(.caption2)
+                        .foregroundStyle(color(for: entry.level))
+                    Text(entry.message)
+                        .font(.system(.footnote, design: .monospaced))
+                        .textSelection(.enabled)
                 }
-                .listStyle(.plain)
-                .onChange(of: log.entries.count) {
-                    if let last = log.entries.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
+                .id(entry.id)
+            }
+            .listStyle(.plain)
+            .onAppear {
+                if let last = log.entries.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
-            .navigationTitle("Log")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Clear", role: .destructive) {
-                        log.clear()
-                    }
+            .onChange(of: log.entries.count) {
+                if let last = log.entries.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: log.exportText)
+            }
+        }
+        .navigationTitle("Log")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The leading side holds the back button now that the log is opened from Settings.
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    UIPasteboard.general.string = log.exportText
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        UIPasteboard.general.string = log.exportText
-                    } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
+                ShareLink(item: log.exportText)
+                Button(role: .destructive) {
+                    log.clear()
+                } label: {
+                    Label("Clear", systemImage: "trash")
                 }
             }
         }

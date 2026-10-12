@@ -20,13 +20,13 @@ final class MPVPlayer: PlaybackEngine {
 
     private static let observedProperties = ["track-list", "pause", "paused-for-cache", "duration"]
 
-    func start(url: URL) {
+    func start(url: URL, startSeconds: Double = 0) {
         guard core == nil else { return }
         configureAudioSession()
         // MoltenVK sends PQ output but doesn't ask iOS for EDR (HDR) mode, so request it here.
         layer.wantsExtendedDynamicRangeContent = PlayerSettings.hdrPassthrough
 
-        let options: [(String, String)] = [
+        var options: [(String, String)] = [
             ("vo", "gpu-next"),
             ("gpu-api", "vulkan"),
             ("gpu-context", "moltenvk"),
@@ -40,6 +40,9 @@ final class MPVPlayer: PlaybackEngine {
             ("subs-fallback", "yes"),
             ("embeddedfonts", "yes"),
         ]
+        if startSeconds > 0 {
+            options.append(("start", String(format: "%.3f", startSeconds)))
+        }
 
         let onEvent: @Sendable (MPVCore.Event) -> Void = { [weak self] event in
             DispatchQueue.main.async {

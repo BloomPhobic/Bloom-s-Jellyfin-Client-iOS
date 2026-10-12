@@ -7,12 +7,22 @@ struct RootView: View {
 
     var body: some View {
         TabView {
-            PlaybackTestView()
-                .tabItem { Label("Play", systemImage: "play.rectangle") }
-            ConnectionView()
-                .tabItem { Label("Connection", systemImage: "network") }
-            LogView()
-                .tabItem { Label("Log", systemImage: "doc.text") }
+            NavigationStack {
+                SignedInGate { api in
+                    HomeView(api: api)
+                }
+            }
+            .tabItem { Label("Home", systemImage: "house") }
+
+            NavigationStack {
+                SignedInGate { api in
+                    SearchView(api: api)
+                }
+            }
+            .tabItem { Label("Search", systemImage: "magnifyingglass") }
+
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .task {
             guard !didRunStartupChecks else { return }
