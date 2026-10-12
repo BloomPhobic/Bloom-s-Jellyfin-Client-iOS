@@ -56,7 +56,7 @@ struct LibraryView: View {
                 )
             }
         }
-        .refreshable { await reload() }
+        .refreshable { await Task { await reload() }.value }
         .navigationTitle(parent.name ?? "Library")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -135,35 +135,47 @@ struct LibraryView: View {
         )
     }
 
+    /// Loads the first page and then replaces the grid, so the old items stay visible meanwhile.
     private func reload() async {
-        items = []
-        total = 0
+        loadID += 1
+        let id = loadID
+        isLoading = true
         errorMessage = nil
-        await loadMore(force: true)
+        do {
+            let page = try await api.items(in: parent, query: query, startIndex: 0, limit: Self.pageSize)
+            guard id == loadID else { return }
+            items = page.items
+            total = page.total
+        } catch {
+            guard id == loadID else { return }
+            report(error)
+        }
+        isLoading = false
     }
 
-    private func loadMore(force: Bool = false) async {
-        if force {
-            loadID += 1
-        } else if isLoading || items.count >= total {
-            return
-        }
+    private func loadMore() async {
+        guard !isLoading, items.count < total else { return }
         let id = loadID
         isLoading = true
         do {
             let page = try await api.items(in: parent, query: query, startIndex: items.count, limit: Self.pageSize)
-            // The sort or filters changed while loading; the newer load takes over.
             guard id == loadID else { return }
             items += page.items
             total = page.total
         } catch {
             guard id == loadID else { return }
-            if !Task.isCancelled {
-                errorMessage = error.localizedDescription
-                AppLog.shared.log("Library \(parent.name ?? ""): \(error.localizedDescription)", level: .error)
-            }
+            report(error)
         }
         isLoading = false
+    }
+
+    private func report(_ error: Error) {
+        // A cancelled request (the view went away, or a newer load replaced it) isn't a failure.
+        if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+            return
+        }
+        errorMessage = error.localizedDescription
+        AppLog.shared.log("Library \(parent.name ?? ""): \(error.localizedDescription)", level: .error)
     }
 }
 

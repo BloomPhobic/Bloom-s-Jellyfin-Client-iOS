@@ -15,6 +15,7 @@ final class PlaybackReporter {
     private let mediaSourceID: String?
     private let playSessionID = UUID().uuidString
     private var started = false
+    private var stopped = false
     private var lastReport = Date.distantPast
     private var lastPaused = false
     private var lastPosition: Double = 0
@@ -30,6 +31,8 @@ final class PlaybackReporter {
     /// Called regularly while the player is open. Sends "started" once, then progress every 10 s
     /// and whenever pause changes.
     func update(position: Double, isPaused: Bool) {
+        // The player's status loop can tick once more after closing; don't restart the session.
+        guard !stopped else { return }
         lastPosition = position
         if !started {
             started = true
@@ -47,8 +50,8 @@ final class PlaybackReporter {
     }
 
     func stop() {
-        guard started else { return }
-        started = false
+        guard started, !stopped else { return }
+        stopped = true
         var body = PlaybackStopInfo()
         body.itemID = itemID
         body.mediaSourceID = mediaSourceID

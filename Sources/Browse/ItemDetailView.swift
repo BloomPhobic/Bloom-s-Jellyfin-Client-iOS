@@ -106,8 +106,10 @@ struct ItemDetailView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "play.fill")
                         Text(resume > 0 ? "Resume \(Self.timeText(resume))" : "Play")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 if resume > 0 {
@@ -116,12 +118,16 @@ struct ItemDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "backward.end.fill")
-                            Text("From start")
+                            Text("Restart")
+                                .lineLimit(1)
                         }
+                        .frame(maxHeight: .infinity)
                     }
                     .buttonStyle(.bordered)
                 }
             }
+            // Both buttons as tall as the taller one.
+            .fixedSize(horizontal: false, vertical: true)
             .controlSize(.large)
         } else {
             Text("No playable file.")

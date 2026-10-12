@@ -133,7 +133,10 @@ struct HomeView: View {
             .padding(.vertical)
         }
         .navigationTitle(store.server?.name ?? "Home")
-        .refreshable { await load() }
+        .refreshable {
+            // SwiftUI can cancel the refresh task while the content changes; run the load outside it.
+            await Task { await load() }.value
+        }
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
             // Reload the next time Home is shown.
             lastLoaded = .distantPast
