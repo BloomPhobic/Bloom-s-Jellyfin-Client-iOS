@@ -14,6 +14,9 @@ struct PlayerView: View {
     @State private var showStats = false
     @State private var panel: PlayerPanel?
     @State private var scrubPosition: Double?
+    /// When the viewer last touched the controls; they fade out a few seconds after that.
+    @State private var lastInteraction = Date()
+    @State private var offlineSince: Date?
 
     private var player: MPVPlayer { session.player }
 
@@ -28,6 +31,7 @@ struct PlayerView: View {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showControls.toggle()
                     }
+                    lastInteraction = .now
                 }
             if session.isRecovering || (player.errorMessage != nil && !session.showsError) {
                 VStack(spacing: 10) {
@@ -46,9 +50,12 @@ struct PlayerView: View {
             if showStats {
                 statsPanel
             }
-            if showControls {
-                controls
-            }
+            // Kept in the view tree while hidden, so an open audio or subtitle menu isn't torn down
+            // when the controls fade.
+            controls
+                .opacity(showControls ? 1 : 0)
+                .allowsHitTesting(showControls)
+                .accessibilityHidden(!showControls)
             // Skip and next-episode stay visible even when the controls are hidden.
             cornerActions
             connectionPill
@@ -69,6 +76,7 @@ struct PlayerView: View {
                 if showStats {
                     player.refreshStats()
                 }
+                autoHideControls()
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
@@ -87,8 +95,29 @@ struct PlayerView: View {
                 session.handoff(to: LibraryAPI(client: client, userID: signedIn.userID))
             }
         }
+        .onChange(of: connectionDown, initial: true) { _, down in
+            offlineSince = down ? .now : nil
+        }
+        .onChange(of: scrubPosition) { lastInteraction = .now }
+        .onChange(of: panel) { lastInteraction = .now }
+        .onChange(of: player.isPaused) { lastInteraction = .now }
+        .onAppear {
+            OrientationLock.set(.landscape, rotateTo: .landscape)
+        }
         .onDisappear {
             session.close()
+            OrientationLock.set(.allButUpsideDown, rotateTo: .portrait)
+        }
+    }
+
+    /// Hides the controls 4 s after the last touch, while playing. They stay up while paused,
+    /// while scrubbing, while a panel is open, and with VoiceOver on.
+    private func autoHideControls() {
+        guard showControls, !player.isPaused, panel == nil, scrubPosition == nil,
+              !UIAccessibility.isVoiceOverRunning,
+              Date().timeIntervalSince(lastInteraction) > 4 else { return }
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showControls = false
         }
     }
 
@@ -160,6 +189,8 @@ struct PlayerView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+        // Any tap on a button counts as activity and restarts the hide timer.
+        .simultaneousGesture(TapGesture().onEnded { lastInteraction = .now })
         .foregroundStyle(Theme.text)
         .tint(Theme.text)
         .background(
@@ -177,34 +208,34 @@ struct PlayerView: View {
     /// Play/pause, ±10 s and the seek bar. Hidden while a side panel is open.
     private var transport: some View {
         Group {
-            HStack(spacing: 48) {
+            HStack(spacing: 40) {
                 Button {
                     player.seek(by: -10)
                 } label: {
                     Image(systemName: "gobackward.10")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold))
                 }
-                .buttonStyle(CircleButtonStyle(size: 52, fill: Theme.scrim))
+                .buttonStyle(CircleButtonStyle(size: 46, fill: Theme.scrim))
                 .accessibilityLabel("Back 10 seconds")
 
                 Button {
                     player.togglePause()
                 } label: {
                     Image(systemName: player.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Theme.background)
                         .contentTransition(.symbolEffect(.replace))
                 }
-                .buttonStyle(CircleButtonStyle(size: 72, fill: Theme.text.opacity(0.92)))
+                .buttonStyle(CircleButtonStyle(size: 56, fill: Theme.text.opacity(0.92)))
                 .accessibilityLabel(player.isPaused ? "Play" : "Pause")
 
                 Button {
                     player.seek(by: 10)
                 } label: {
                     Image(systemName: "goforward.10")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold))
                 }
-                .buttonStyle(CircleButtonStyle(size: 52, fill: Theme.scrim))
+                .buttonStyle(CircleButtonStyle(size: 46, fill: Theme.scrim))
                 .accessibilityLabel("Forward 10 seconds")
             }
 
@@ -281,33 +312,44 @@ struct PlayerView: View {
         }
     }
 
+    private var connectionDown: Bool {
+        store.isOffline || store.isServerUnreachable
+    }
+
     /// Top centre, while the connection is down: how long the buffer will last, or that playback is
-    /// waiting for the connection to come back.
+    /// waiting for the connection to come back. The full pill shows for the first few seconds, with
+    /// the controls, and while stalled; otherwise it shrinks to a small icon. Tap the screen to see it again.
     @ViewBuilder
     private var connectionPill: some View {
-        let connectionDown = store.isOffline || store.isServerUnreachable
+        let justWentOffline = offlineSince.map { Date().timeIntervalSince($0) < 5 } ?? false
+        let expanded = showControls || player.isBuffering || justWentOffline
         Group {
             if connectionDown && player.errorMessage == nil {
                 HStack(spacing: 8) {
                     Image(systemName: "wifi.slash")
-                    if player.isBuffering {
-                        Text("Waiting for connection…")
-                    } else {
-                        Text("Offline · playing from buffer (\(Self.format(player.bufferedSeconds)) left)")
+                    if expanded {
+                        if player.isBuffering {
+                            Text("Waiting for connection…")
+                        } else {
+                            Text("Offline · playing from buffer (\(Self.format(player.bufferedSeconds)) left)")
+                        }
                     }
                 }
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, expanded ? 14 : 8)
                 .padding(.vertical, 8)
-                .background(Capsule().fill(Theme.background.opacity(0.85)))
+                .background(Capsule().fill(Theme.background.opacity(expanded ? 0.85 : 0.6)))
                 .overlay(Capsule().strokeBorder(Color.orange.opacity(0.7), lineWidth: 1))
                 .padding(.top, showControls ? 64 : 12)
                 .transition(.move(edge: .top).combined(with: .opacity))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(player.isBuffering ? "Offline, waiting for connection" : "Offline, playing from buffer")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.25), value: connectionDown)
+        .animation(.easeInOut(duration: 0.25), value: expanded)
         .allowsHitTesting(false)
     }
 

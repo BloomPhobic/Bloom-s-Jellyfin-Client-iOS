@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct JellyfinClientApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var session = SessionStore()
     @AppStorage(Appearance.accentKey) private var accentHex = Appearance.defaultAccentHex
 
