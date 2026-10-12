@@ -17,9 +17,11 @@ struct SearchView: View {
                 NavigationLink(value: BrowseRoute.item(item)) {
                     SearchRow(item: item, api: api)
                 }
+                .listRowBackground(Color.clear)
             }
         }
         .listStyle(.plain)
+        .themedBackground()
         .overlay {
             let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if term.isEmpty {
@@ -75,10 +77,12 @@ private struct SearchRow: View {
                 .frame(width: 50)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name ?? "Untitled")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
                     .lineLimit(2)
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text3)
                     .lineLimit(1)
             }
         }

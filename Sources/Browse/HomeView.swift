@@ -96,29 +96,41 @@ struct HomeView: View {
     @State private var latest: [String: [BaseItemDto]] = [:]
     @State private var errorMessage: String?
     @State private var lastLoaded: Date?
+    @State private var playback: PlaybackSession?
+    @State private var isStartingPlayback = false
 
     /// Library types a video client can show.
     private static let videoLibraries: Set<CollectionType> = [.movies, .tvshows, .boxsets, .homevideos, .musicvideos]
 
+    /// The big card at the top: the most recent thing in progress, otherwise the first Next up.
+    private var heroItem: BaseItemDto? { resume.first ?? nextUp.first }
+    private var continueRow: [BaseItemDto] { resume.isEmpty ? [] : Array(resume.dropFirst()) }
+    private var nextUpRow: [BaseItemDto] { resume.isEmpty ? Array(nextUp.dropFirst()) : nextUp }
+
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 26) {
+                header
                 if let errorMessage {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(errorMessage)
                             .foregroundStyle(.red)
                         Button("Try again") { Task { await load() } }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
+                }
+                if let heroItem {
+                    hero(heroItem)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
                 if !libraries.isEmpty {
-                    librariesRow
+                    libraryPills
                 }
-                if !resume.isEmpty {
-                    row("Continue watching", items: resume, wide: true)
+                if !continueRow.isEmpty {
+                    row("Continue watching", items: continueRow, wide: true)
                 }
-                if !nextUp.isEmpty {
-                    row("Next up", items: nextUp, wide: true)
+                if !nextUpRow.isEmpty {
+                    row("Next up", items: nextUpRow, wide: true)
                 }
                 ForEach(libraries, id: \.id) { library in
                     if let items = latest[library.id ?? ""], !items.isEmpty {
@@ -134,9 +146,11 @@ struct HomeView: View {
                         .padding(.top, 40)
                 }
             }
-            .padding(.vertical)
+            .padding(.bottom, 16)
         }
-        .navigationTitle(store.server?.name ?? "Home")
+        .background(Theme.background.ignoresSafeArea())
+        .navigationTitle("Home")
+        .toolbar(.hidden, for: .navigationBar)
         .refreshable {
             // SwiftUI can cancel the refresh task while the content changes; run the load outside it.
             await Task { await load() }.value
@@ -151,56 +165,175 @@ struct HomeView: View {
                 await load()
             }
         }
+        .fullScreenCover(item: $playback) { session in
+            PlayerView(session: session)
+                .environment(store)
+        }
         .browseDestinations(api: api)
     }
 
+    // MARK: - Pieces
+
+    private var header: some View {
+        HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(store.route == nil ? Color.orange : Color.green)
+                        .frame(width: 7, height: 7)
+                    Text([store.server?.name, store.route?.kind.label].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text3)
+                        .lineLimit(1)
+                }
+                Text("Home")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(Theme.text)
+            }
+            Spacer()
+            Menu {
+                if let session = store.session {
+                    Text("Signed in as \(session.userName)")
+                }
+                Button("Sign out", role: .destructive) {
+                    Task { await store.signOut() }
+                }
+            } label: {
+                Text(String(store.session?.userName.prefix(1) ?? "?").uppercased())
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Theme.raised2))
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            }
+            .accessibilityLabel("Account")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+    }
+
+    private func hero(_ item: BaseItemDto) -> some View {
+        let isEpisode = item.type == .episode
+        let inProgress = item.resumeSeconds > 0
+        let kicker = [inProgress ? "CONTINUE" : "UP NEXT", item.episodeLabel].compactMap { $0 }.joined(separator: " · ")
+        let title = isEpisode ? (item.seriesName ?? item.name ?? "") : (item.name ?? "")
+        let detail = [isEpisode ? item.name : nil, Self.timeLeft(item)].compactMap { $0 }.joined(separator: " · ")
+
+        return Color.clear
+            .frame(height: 236)
+            .overlay {
+                RemoteImage(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1000))
+            }
+            .overlay(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(kicker)
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(Color.accentColor)
+                        Text(title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                        if !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.text2)
+                                .lineLimit(1)
+                        }
+                    }
+                    if let percent = item.userData?.playedPercentage, percent > 0 {
+                        ProgressBar(fraction: percent / 100)
+                    }
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await play(item) }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isStartingPlayback {
+                                    ProgressView().tint(Theme.onAccent)
+                                } else {
+                                    Image(systemName: "play.fill")
+                                }
+                                Text(inProgress ? "Resume \(ItemDetailView.timeText(item.resumeSeconds))" : "Play")
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle(height: 44))
+                        .disabled(isStartingPlayback)
+                        NavigationLink(value: BrowseRoute.item(item)) {
+                            Image(systemName: "info")
+                                .font(.system(size: 17, weight: .semibold))
+                        }
+                        .buttonStyle(CircleButtonStyle(size: 44, fill: Color.white.opacity(0.1)))
+                        .accessibilityLabel("Details")
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.background.opacity(0.8))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+    }
+
+    private var libraryPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(libraries, id: \.id) { library in
+                    NavigationLink(value: BrowseRoute.library(library)) {
+                        Pill(title: library.name ?? "Library")
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
     private func row(_ title: String, items: [BaseItemDto], wide: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.title3.bold())
-                .padding(.horizontal)
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(text: title)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(items, id: \.id) { item in
                         NavigationLink(value: BrowseRoute.item(item)) {
                             if wide {
                                 LandscapeCard(item: item, api: api)
-                                    .frame(width: 240)
+                                    .frame(width: 224)
                             } else {
                                 PosterCard(item: item, api: api)
-                                    .frame(width: 110)
+                                    .frame(width: 108)
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableStyle())
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 16)
             }
         }
     }
 
-    private var librariesRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Libraries")
-                .font(.title3.bold())
-                .padding(.horizontal)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 12) {
-                    ForEach(libraries, id: \.id) { library in
-                        NavigationLink(value: BrowseRoute.library(library)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ArtworkFrame(url: api.imageURL(Artwork.landscape(library), maxWidth: 600), aspectRatio: 16 / 9)
-                                Text(library.name ?? "")
-                                    .font(.caption)
-                                    .lineLimit(1)
-                            }
-                            .frame(width: 200)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
-            }
+    private static func timeLeft(_ item: BaseItemDto) -> String? {
+        guard let total = item.runTimeTicks, total > 0 else { return nil }
+        let position = item.userData?.playbackPositionTicks ?? 0
+        guard position > 0 else { return item.runtimeText }
+        let minutes = max(1, (total - position) / 600_000_000)
+        return "\(minutes) min left"
+    }
+
+    // MARK: - Actions
+
+    private func play(_ item: BaseItemDto) async {
+        guard let id = item.id, !isStartingPlayback else { return }
+        isStartingPlayback = true
+        defer { isStartingPlayback = false }
+        do {
+            let full = try await api.item(id)
+            playback = PlaybackSession(api: api, item: full, startSeconds: full.isPlayed ? 0 : full.resumeSeconds)
+        } catch {
+            AppLog.shared.log("Couldn't start \(item.name ?? id): \(error.localizedDescription)", level: .error)
         }
     }
 
@@ -211,22 +344,25 @@ struct HomeView: View {
         async let historyRequest = api.watchHistory()
 
         var failures: [String] = []
-        do { resume = try await resumeRequest } catch { failures.append("continue watching: \(error.localizedDescription)") }
-        do { nextUp = try await nextUpRequest } catch { failures.append("next up: \(error.localizedDescription)") }
+        var newResume = resume
+        var newNextUp = nextUp
+        var newLibraries = libraries
+        var newHistory = history
+        do { newResume = try await resumeRequest } catch { failures.append("continue watching: \(error.localizedDescription)") }
+        do { newNextUp = try await nextUpRequest } catch { failures.append("next up: \(error.localizedDescription)") }
         do {
             let all = try await librariesRequest
-            libraries = all.filter { library in
+            newLibraries = all.filter { library in
                 library.collectionType.map { Self.videoLibraries.contains($0) } ?? true
             }
         } catch {
             failures.append("libraries: \(error.localizedDescription)")
         }
-
-        do { history = try await historyRequest } catch { failures.append("watch history: \(error.localizedDescription)") }
+        do { newHistory = try await historyRequest } catch { failures.append("watch history: \(error.localizedDescription)") }
 
         let api = api
-        let libraryIDs = libraries.compactMap(\.id)
-        latest = await withTaskGroup(of: (String, [BaseItemDto]).self) { group in
+        let libraryIDs = newLibraries.compactMap(\.id)
+        let newLatest = await withTaskGroup(of: (String, [BaseItemDto]).self) { group in
             for id in libraryIDs {
                 group.addTask { (id, (try? await api.latest(in: id)) ?? []) }
             }
@@ -237,6 +373,14 @@ struct HomeView: View {
             return found
         }
 
+        // Fade the rows in together instead of popping in one by one.
+        withAnimation(.easeOut(duration: 0.3)) {
+            resume = newResume
+            nextUp = newNextUp
+            libraries = newLibraries
+            history = newHistory
+            latest = newLatest
+        }
         lastLoaded = Date()
         if failures.isEmpty {
             errorMessage = nil

@@ -10,6 +10,8 @@ struct JellyfinClientApp: App {
             RootView()
                 .environment(session)
                 .tint(Appearance.color(hex: accentHex))
+                .preferredColorScheme(.dark)
+                .onAppear(perform: Appearance.migrateDefault)
         }
     }
 }

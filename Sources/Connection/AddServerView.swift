@@ -41,6 +41,7 @@ struct AddServerView: View {
                 .disabled(isConnecting || address.isEmpty)
             }
         }
+        .themedBackground()
         .navigationTitle("Add a server")
     }
 
@@ -95,6 +96,7 @@ struct ServerUnreachableView: View {
                 .disabled(store.isResolving)
             }
         }
+        .themedBackground()
         .navigationTitle("Not connected")
     }
 }
@@ -111,5 +113,6 @@ struct ConnectingView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.background.ignoresSafeArea())
     }
 }

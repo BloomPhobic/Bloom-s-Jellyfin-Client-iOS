@@ -79,6 +79,7 @@ struct LoginView: View {
                 }
             }
         }
+        .themedBackground()
         .navigationTitle("Sign in")
         .task(id: store.route?.address) {
             await loadOptions()

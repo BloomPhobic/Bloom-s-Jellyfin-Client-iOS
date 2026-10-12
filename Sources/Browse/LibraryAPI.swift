@@ -52,6 +52,17 @@ struct LibraryAPI {
         return try await client.send(Paths.getItems(parameters: parameters)).value.items ?? []
     }
 
+    /// Where to pick up a show: the episode in progress, or the next unwatched one.
+    func nextUp(seriesID: String) async throws -> BaseItemDto? {
+        var parameters = Paths.GetNextUpParameters()
+        parameters.userID = userID
+        parameters.seriesID = seriesID
+        parameters.limit = 1
+        parameters.enableResumable = true
+        parameters.enableUserData = true
+        return try await client.send(Paths.getNextUp(parameters: parameters)).value.items?.first
+    }
+
     func latest(in libraryID: String) async throws -> [BaseItemDto] {
         var parameters = Paths.GetLatestMediaParameters()
         parameters.userID = userID

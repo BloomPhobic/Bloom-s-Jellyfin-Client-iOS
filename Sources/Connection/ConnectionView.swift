@@ -27,6 +27,7 @@ struct ConnectionView: View {
                 }
             }
         }
+        .themedBackground()
         .navigationTitle("Connection")
         .toolbar {
             if store.server != nil {

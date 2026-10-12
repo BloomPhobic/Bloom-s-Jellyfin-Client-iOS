@@ -57,11 +57,12 @@ struct RemoteImage: View {
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(Color.secondary.opacity(0.15))
+                .fill(Theme.raised2)
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                    .transition(.opacity)
             }
         }
         .task(id: url) {
@@ -69,7 +70,13 @@ struct RemoteImage: View {
                 image = nil
                 return
             }
-            image = await ImageCache.shared.load(url)
+            let loaded = await ImageCache.shared.load(url)
+            // Fade in images that came from the network; cached ones are already showing.
+            if image == nil {
+                withAnimation(.easeOut(duration: 0.25)) { image = loaded }
+            } else {
+                image = loaded
+            }
         }
     }
 }
@@ -78,6 +85,7 @@ struct RemoteImage: View {
 struct ArtworkFrame<Decoration: View>: View {
     let url: URL?
     let aspectRatio: CGFloat
+    var cornerRadius: CGFloat = 12
     @ViewBuilder var decoration: Decoration
 
     var body: some View {
@@ -85,13 +93,13 @@ struct ArtworkFrame<Decoration: View>: View {
             .aspectRatio(aspectRatio, contentMode: .fit)
             .overlay { RemoteImage(url: url) }
             .overlay { decoration }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
 extension ArtworkFrame where Decoration == EmptyView {
-    init(url: URL?, aspectRatio: CGFloat) {
-        self.init(url: url, aspectRatio: aspectRatio) { EmptyView() }
+    init(url: URL?, aspectRatio: CGFloat, cornerRadius: CGFloat = 12) {
+        self.init(url: url, aspectRatio: aspectRatio, cornerRadius: cornerRadius) { EmptyView() }
     }
 }
 
@@ -103,18 +111,18 @@ struct WatchBadge: View {
         Group {
             if item.isPlayed {
                 Image(systemName: "checkmark")
-                    .font(.caption2.bold())
-                    .padding(5)
+                    .font(.system(size: 10, weight: .heavy))
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.accentColor))
             } else if let count = item.userData?.unplayedItemCount, count > 0, item.type != .episode, item.type != .movie {
                 Text(verbatim: "\(count)")
-                    .font(.caption2.bold())
+                    .font(.system(size: 11, weight: .heavy))
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .frame(minWidth: 22, minHeight: 22)
                     .background(Capsule().fill(Color.accentColor))
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.onAccent)
         .padding(5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
@@ -130,7 +138,7 @@ struct ProgressOverlay: View {
                 Spacer()
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
-                        Rectangle().fill(.black.opacity(0.5))
+                        Rectangle().fill(Theme.scrim)
                         Rectangle().fill(Color.accentColor)
                             .frame(width: proxy.size.width * CGFloat(min(percent, 100) / 100))
                     }
@@ -152,11 +160,12 @@ struct PosterCard: View {
                 WatchBadge(item: item)
             }
             Text(item.name ?? "")
-                .font(.caption)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.text)
                 .lineLimit(1)
             Text(subtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text3)
                 .lineLimit(1)
         }
         .contentShape(Rectangle())
@@ -177,19 +186,20 @@ struct LandscapeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ArtworkFrame(url: api.imageURL(Artwork.landscape(item), maxWidth: 600), aspectRatio: 16 / 9) {
+            ArtworkFrame(url: api.imageURL(Artwork.landscape(item), maxWidth: 600), aspectRatio: 16 / 9, cornerRadius: 14) {
                 ZStack {
                     WatchBadge(item: item)
                     ProgressOverlay(item: item)
                 }
             }
             Text(title)
-                .font(.caption)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.text)
                 .lineLimit(1)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text3)
                     .lineLimit(1)
             }
         }

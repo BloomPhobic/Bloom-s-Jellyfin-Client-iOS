@@ -83,41 +83,63 @@ struct PlayerView: View {
 
     private var controls: some View {
         VStack {
-            HStack(spacing: 20) {
+            HStack(spacing: 12) {
                 Button {
                     close()
                 } label: {
                     Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .bold))
                 }
-                Text(verbatim: session.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                if session.isEpisode {
+                .buttonStyle(CircleButtonStyle())
+                .accessibilityLabel("Close player")
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: session.headline)
+                        .font(.system(size: 15, weight: .bold))
+                        .lineLimit(1)
+                    if let subheadline = session.subheadline {
+                        Text(verbatim: subheadline)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.text2)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    if session.isEpisode {
+                        Button {
+                            toggle(.episodes)
+                        } label: {
+                            Image(systemName: panel == .episodes ? "rectangle.stack.fill" : "rectangle.stack")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .buttonStyle(CircleButtonStyle(fill: panel == .episodes ? Color.accentColor.opacity(0.35) : Theme.scrim))
+                        .accessibilityLabel("Episodes")
+                    }
+                    AudioTrackMenu(player: player)
+                    SubtitleTrackMenu(player: player)
                     Button {
-                        toggle(.episodes)
+                        toggle(.subtitles)
                     } label: {
-                        Image(systemName: panel == .episodes ? "rectangle.stack.fill" : "rectangle.stack")
+                        Text("Aa")
+                            .font(.system(size: 15, weight: .bold))
                     }
-                }
-                AudioTrackMenu(player: player)
-                SubtitleTrackMenu(player: player)
-                Button {
-                    toggle(.subtitles)
-                } label: {
-                    Image(systemName: "textformat.size")
-                        .symbolVariant(panel == .subtitles ? .circle.fill : .none)
-                }
-                Button {
-                    showStats.toggle()
-                    if showStats {
-                        player.refreshStats()
+                    .buttonStyle(CircleButtonStyle(fill: panel == .subtitles ? Color.accentColor.opacity(0.35) : Theme.scrim))
+                    .accessibilityLabel("Subtitle size, style and timing")
+                    Button {
+                        showStats.toggle()
+                        if showStats {
+                            player.refreshStats()
+                        }
+                    } label: {
+                        Image(systemName: showStats ? "info.circle.fill" : "info.circle")
+                            .font(.system(size: 16, weight: .semibold))
                     }
-                } label: {
-                    Image(systemName: showStats ? "info.circle.fill" : "info.circle")
+                    .buttonStyle(CircleButtonStyle())
+                    .accessibilityLabel("Playback stats")
                 }
             }
-            .font(.title3)
 
             Spacer()
 
@@ -125,12 +147,14 @@ struct PlayerView: View {
                 transport
             }
         }
-        .padding()
-        .foregroundStyle(.white)
-        .tint(.white)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .foregroundStyle(Theme.text)
+        .tint(Theme.text)
         .background(
+            // A light scrim so white controls stay readable over bright video.
             LinearGradient(
-                colors: [.black.opacity(0.6), .clear, .clear, .black.opacity(0.6)],
+                colors: [.black.opacity(0.55), .clear, .clear, .black.opacity(0.55)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -142,48 +166,53 @@ struct PlayerView: View {
     /// Play/pause, ±10 s and the seek bar. Hidden while a side panel is open.
     private var transport: some View {
         Group {
-            HStack(spacing: 56) {
+            HStack(spacing: 48) {
                 Button {
                     player.seek(by: -10)
                 } label: {
                     Image(systemName: "gobackward.10")
+                        .font(.system(size: 22, weight: .semibold))
                 }
+                .buttonStyle(CircleButtonStyle(size: 52, fill: Theme.scrim))
+                .accessibilityLabel("Back 10 seconds")
+
                 Button {
                     player.togglePause()
                 } label: {
                     Image(systemName: player.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(Theme.background)
+                        .contentTransition(.symbolEffect(.replace))
                 }
+                .buttonStyle(CircleButtonStyle(size: 72, fill: Theme.text.opacity(0.92)))
+                .accessibilityLabel(player.isPaused ? "Play" : "Pause")
+
                 Button {
                     player.seek(by: 10)
                 } label: {
                     Image(systemName: "goforward.10")
+                        .font(.system(size: 22, weight: .semibold))
                 }
+                .buttonStyle(CircleButtonStyle(size: 52, fill: Theme.scrim))
+                .accessibilityLabel("Forward 10 seconds")
             }
-            .font(.system(size: 36))
 
             Spacer()
 
-            VStack(spacing: 4) {
-                Slider(
-                    value: Binding(
-                        get: { scrubPosition ?? player.position },
-                        set: { scrubPosition = $0 }
-                    ),
-                    in: 0...max(player.duration, 1),
-                    onEditingChanged: { editing in
-                        if !editing, let target = scrubPosition {
-                            player.seek(to: target)
-                            scrubPosition = nil
-                        }
-                    }
-                )
-                HStack {
-                    Text(Self.format(scrubPosition ?? player.position))
-                    Spacer()
-                    Text(Self.format(player.duration))
+            HStack(spacing: 12) {
+                Text(Self.format(scrubPosition ?? player.position))
+                SeekBar(
+                    position: player.position,
+                    duration: player.duration,
+                    segments: session.segments,
+                    scrubPosition: $scrubPosition
+                ) { target in
+                    player.seek(to: target)
                 }
-                .font(.caption.monospacedDigit())
+                Text("-" + Self.format(max(0, player.duration - (scrubPosition ?? player.position))))
+                    .foregroundStyle(Theme.text2)
             }
+            .font(.system(size: 12, weight: .semibold).monospacedDigit())
         }
     }
 
@@ -251,14 +280,19 @@ struct PlayerView: View {
                 Button {
                     session.skip(segment)
                 } label: {
-                    Label(segment.skipTitle, systemImage: "forward.end.fill")
-                        .font(.headline)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background(.ultraThinMaterial, in: Capsule())
+                    HStack(spacing: 8) {
+                        Image(systemName: "forward.end.fill")
+                        Text(segment.skipTitle)
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 16)
+                    .frame(height: 40)
+                    .background(Capsule().fill(Theme.background.opacity(0.8)))
+                    .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
+                .buttonStyle(PressableStyle())
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -266,6 +300,7 @@ struct PlayerView: View {
         .padding(.bottom, showControls ? 90 : 24)
         .padding(.trailing, 24)
         .animation(.easeInOut(duration: 0.2), value: session.showsNextCard)
+        .animation(.easeInOut(duration: 0.2), value: session.activeSegment)
     }
 
     private var statsPanel: some View {
@@ -318,6 +353,75 @@ struct PlayerView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, secs)
         }
         return String(format: "%d:%02d", minutes, secs)
+    }
+}
+
+/// Seek bar with the server's intro/credits segments marked. Drag anywhere on it to scrub.
+private struct SeekBar: View {
+    let position: Double
+    let duration: Double
+    let segments: [PlaybackSegment]
+    @Binding var scrubPosition: Double?
+    let onCommit: (Double) -> Void
+
+    @State private var isDragging = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let shown = scrubPosition ?? position
+            let fraction = duration > 0 ? CGFloat(min(max(shown / duration, 0), 1)) : 0
+            let track: CGFloat = isDragging ? 8 : 5
+            let knob: CGFloat = isDragging ? 22 : 16
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.22))
+                    .frame(height: track)
+                if duration > 0 {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                        Rectangle()
+                            .fill(Color.white.opacity(0.5))
+                            .frame(width: max(2, width * CGFloat((segment.end - segment.start) / duration)), height: track)
+                            .offset(x: width * CGFloat(segment.start / duration))
+                    }
+                }
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: width * fraction, height: track)
+                Circle()
+                    .fill(Theme.text)
+                    .frame(width: knob, height: knob)
+                    .shadow(color: .black.opacity(0.4), radius: 4)
+                    .offset(x: width * fraction - knob / 2)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isDragging = true
+                        scrubPosition = Double(min(max(value.location.x / max(width, 1), 0), 1)) * duration
+                    }
+                    .onEnded { value in
+                        let target = Double(min(max(value.location.x / max(width, 1), 0), 1)) * duration
+                        onCommit(target)
+                        scrubPosition = nil
+                        isDragging = false
+                    }
+            )
+        }
+        .frame(height: 30)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+        .accessibilityElement()
+        .accessibilityLabel("Position")
+        .accessibilityValue("\(Int(position) / 60) minutes \(Int(position) % 60) seconds")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onCommit(min(position + 10, duration))
+            case .decrement: onCommit(max(position - 10, 0))
+            @unknown default: break
+            }
+        }
     }
 }
 
@@ -585,7 +689,11 @@ private struct AudioTrackMenu: View {
             }
         } label: {
             Image(systemName: "speaker.wave.2")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Theme.scrim))
         }
+        .accessibilityLabel("Audio track")
     }
 }
 
@@ -616,6 +724,10 @@ private struct SubtitleTrackMenu: View {
             }
         } label: {
             Image(systemName: "captions.bubble")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Theme.scrim))
         }
+        .accessibilityLabel("Subtitles")
     }
 }

@@ -29,6 +29,7 @@ struct LogView: View {
                 }
             }
         }
+        .themedBackground()
         .navigationTitle("Log")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

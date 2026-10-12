@@ -25,15 +25,24 @@ struct LibraryView: View {
 
     var body: some View {
         ScrollView {
+            if total > 0 {
+                Text(countText)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.text3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+            }
             if query != LibraryQuery() {
                 activeOptions
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(items, id: \.id) { item in
                     NavigationLink(value: BrowseRoute.item(item)) {
                         PosterCard(item: item, api: api)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                     .onAppear {
                         if item.id == items.last?.id {
                             Task { await loadMore() }
@@ -57,8 +66,10 @@ struct LibraryView: View {
             }
         }
         .refreshable { await Task { await reload() }.value }
+        .animation(.easeInOut(duration: 0.25), value: query)
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(parent.name ?? "Library")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 optionsMenu
@@ -71,6 +82,16 @@ struct LibraryView: View {
             query.save(for: parent.id)
             await reload()
         }
+    }
+
+    private var countText: String {
+        let noun: String
+        switch parent.collectionType {
+        case .movies: noun = total == 1 ? "movie" : "movies"
+        case .tvshows: noun = total == 1 ? "show" : "shows"
+        default: noun = total == 1 ? "item" : "items"
+        }
+        return "\(total) \(noun)"
     }
 
     /// Chips for every non-default option, each removable, plus Reset. Shown above the grid.
@@ -194,8 +215,9 @@ private struct OptionChip: View {
             .font(.subheadline)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Capsule().fill(Color.accentColor.opacity(0.2)))
-            .foregroundStyle(Color.accentColor)
+            .background(Capsule().fill(Color.accentColor.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: 1))
+            .foregroundStyle(Theme.text)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Remove \(title)")

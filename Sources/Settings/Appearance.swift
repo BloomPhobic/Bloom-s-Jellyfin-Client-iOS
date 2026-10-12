@@ -4,16 +4,28 @@ import UIKit
 /// The app's accent colour, chosen in Settings and stored as a hex string.
 enum Appearance {
     static let accentKey = "appearance.accent"
-    static let defaultAccentHex = "AA5CC3"
+    static let defaultAccentHex = "B57BFF"
 
     static let presets: [(name: String, hex: String)] = [
+        ("Bloom purple", "B57BFF"),
         ("Jellyfin purple", "AA5CC3"),
         ("Dark purple", "7B3FBF"),
         ("Jellyfin blue", "00A4DC"),
         ("Pink", "E0559A"),
         ("Green", "34C77B"),
-        ("Orange", "F28C28"),
     ]
+
+    /// Builds before the redesign defaulted to Jellyfin purple. Move anyone still on that old default
+    /// to the new one, once; a colour the user picked themselves is kept.
+    static func migrateDefault() {
+        let defaults = UserDefaults.standard
+        let migratedKey = "appearance.accentMigrated"
+        guard !defaults.bool(forKey: migratedKey) else { return }
+        defaults.set(true, forKey: migratedKey)
+        if defaults.string(forKey: accentKey) == "AA5CC3" {
+            defaults.set(defaultAccentHex, forKey: accentKey)
+        }
+    }
 
     static func color(hex: String) -> Color {
         Color(hex: hex) ?? Color(hex: defaultAccentHex) ?? .purple

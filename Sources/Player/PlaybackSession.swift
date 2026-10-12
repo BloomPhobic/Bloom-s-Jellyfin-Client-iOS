@@ -75,6 +75,20 @@ final class PlaybackSession: Identifiable {
 
     var isEpisode: Bool { item.type == .episode }
 
+    /// Player title: the show for episodes, otherwise the item.
+    var headline: String {
+        isEpisode ? (item.seriesName ?? item.name ?? "") : (item.name ?? "")
+    }
+
+    /// "S3:E2 · Episode name" for episodes, the year for movies.
+    var subheadline: String? {
+        if isEpisode {
+            let text = [item.episodeLabel, item.name].compactMap { $0 }.joined(separator: " · ")
+            return text.isEmpty ? nil : text
+        }
+        return item.productionYear.map { String($0) }
+    }
+
     // MARK: - Loading
 
     /// Loads the skip markers, the next episode and the season list for the current item.

@@ -62,6 +62,7 @@ struct SettingsView: View {
                     LabeledContent("Version", value: "\(AppInfo.version) (build \(AppInfo.build))")
                 }
             }
+            .themedBackground()
             .navigationTitle("Settings")
         }
     }
