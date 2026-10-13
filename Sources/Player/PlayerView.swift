@@ -313,8 +313,9 @@ struct PlayerView: View {
         }
     }
 
+    /// A downloaded file plays on regardless, so the connection doesn't matter then.
     private var connectionDown: Bool {
-        store.isOffline || store.isServerUnreachable
+        (store.isOffline || store.isServerUnreachable) && !session.isPlayingDownload
     }
 
     /// Top centre, while the connection is down: how long the buffer will last, or that playback is
@@ -563,7 +564,7 @@ private struct NextEpisodeCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            ArtworkFrame(url: session.api.imageURL(Artwork.landscape(next), maxWidth: 400), aspectRatio: 16 / 9)
+            ArtworkFrame(url: session.stillURL(next), aspectRatio: 16 / 9)
                 .frame(width: 130)
             VStack(alignment: .leading, spacing: 6) {
                 // Redraws on its own clock; nothing else on the card changes while counting down.
@@ -754,7 +755,7 @@ private struct EpisodePickerView: View {
                         Task { await session.play(episode, resume: true) }
                     } label: {
                         HStack(spacing: 12) {
-                            ArtworkFrame(url: session.api.imageURL(Artwork.landscape(episode), maxWidth: 300), aspectRatio: 16 / 9) {
+                            ArtworkFrame(url: session.stillURL(episode), aspectRatio: 16 / 9) {
                                 ZStack {
                                     WatchBadge(item: episode)
                                     ProgressOverlay(item: episode)
@@ -786,7 +787,7 @@ private struct EpisodePickerView: View {
             .scrollContentBackground(.hidden)
         }
         .task {
-            if let seriesID = session.item.seriesID {
+            if !session.isOffline, let seriesID = session.item.seriesID {
                 seasons = (try? await session.api.seasons(seriesID: seriesID)) ?? []
             }
             if session.seasonEpisodes.isEmpty {

@@ -186,6 +186,9 @@ struct ItemDetailView: View {
                 if let binding = Binding($item) {
                     UserDataTiles(api: api, item: binding)
                 }
+                if store.canDownload || DownloadStore.shared.record(item.id) != nil {
+                    DownloadTile(api: api, item: item)
+                }
             }
         } else {
             Text("No playable file.")

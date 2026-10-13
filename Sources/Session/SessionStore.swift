@@ -70,6 +70,25 @@ final class SessionStore {
     private(set) var isServerUnreachable = false
     /// Client for the current route, with the access token when signed in.
     private(set) var client: JellyfinClient?
+    /// The server allows this account to download media (the "Allow media downloading" user setting).
+    private(set) var canDownload = true
+
+    /// An address answers and the phone is online.
+    var isConnected: Bool {
+        client != nil && !isOffline && !isServerUnreachable
+    }
+
+    /// For playing downloads: the current connection, or (with no address answering) one built for
+    /// the preferred address, so progress can be reported once it's back.
+    func apiForDownloads() -> LibraryAPI? {
+        guard let session else { return nil }
+        if let client {
+            return LibraryAPI(client: client, userID: session.userID)
+        }
+        guard let address = server?.addresses.first, let url = URL(string: address) else { return nil }
+        let offlineClient = Self.makeClient(url: url, accessToken: session.accessToken, deviceID: session.deviceID ?? Self.installDeviceID)
+        return LibraryAPI(client: offlineClient, userID: session.userID)
+    }
 
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var resolveAgain = false
@@ -534,10 +553,15 @@ final class SessionStore {
         guard !sessionChecked, let current = session, let client,
               let url = client.url(with: Paths.getCurrentUser, queryAPIKey: true) else { return }
         do {
-            let (_, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: url)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard session?.userID == current.userID else { return }
             sessionChecked = true
+            if status == 200,
+               let user = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let policy = user["Policy"] as? [String: Any] {
+                canDownload = policy["EnableContentDownloading"] as? Bool ?? true
+            }
             if status == 401 || status == 403 {
                 AppLog.shared.log("The sign-in for \(current.userName) is no longer valid (HTTP \(status)). Please sign in again.", level: .warning)
                 notice = "The sign-in for \(current.userName) has expired. Please sign in again."

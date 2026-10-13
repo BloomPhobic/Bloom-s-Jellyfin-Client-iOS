@@ -18,6 +18,7 @@ struct SeriesView: View {
     @State private var errorMessage: String?
     @State private var playback: PlaybackSession?
     @State private var isStartingPlayback = false
+    @State private var downloadMessage: String?
 
     var body: some View {
         ScrollView {
@@ -77,6 +78,13 @@ struct SeriesView: View {
                             Label(series.isPlayed ? "Mark show unwatched" : "Mark show watched",
                                   systemImage: series.isPlayed ? "eye.slash" : "checkmark.circle")
                         }
+                        if store.canDownload, !episodes.isEmpty {
+                            Button {
+                                Task { await downloadSeason() }
+                            } label: {
+                                Label("Download \(seasons.first { $0.id == loadedSeasonID }?.name ?? "season")", systemImage: "arrow.down.circle")
+                            }
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 16, weight: .semibold))
@@ -112,6 +120,11 @@ struct SeriesView: View {
         .fullScreenCover(item: $playback) { session in
             PlayerView(session: session)
                 .environment(store)
+        }
+        .alert("Can't download", isPresented: Binding(get: { downloadMessage != nil }, set: { if !$0 { downloadMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(downloadMessage ?? "")
         }
     }
 
@@ -175,6 +188,21 @@ struct SeriesView: View {
                         } label: {
                             Label(episode.isPlayed ? "Mark unwatched" : "Mark watched",
                                   systemImage: episode.isPlayed ? "eye.slash" : "checkmark.circle")
+                        }
+                        if let id = episode.id {
+                            if DownloadStore.shared.record(id) != nil {
+                                Button(role: .destructive) {
+                                    DownloadStore.shared.delete(id)
+                                } label: {
+                                    Label("Remove download", systemImage: "trash")
+                                }
+                            } else if store.canDownload {
+                                Button {
+                                    Task { downloadMessage = await DownloadStore.shared.download(itemID: id, api: api) }
+                                } label: {
+                                    Label("Download", systemImage: "arrow.down.circle")
+                                }
+                            }
                         }
                     }
                 }
@@ -321,6 +349,18 @@ struct SeriesView: View {
         }
     }
 
+    /// Queues every episode of the open season that isn't downloaded yet. Stops at the first one
+    /// that can't be (usually: not enough space).
+    private func downloadSeason() async {
+        for episode in episodes {
+            guard let id = episode.id, DownloadStore.shared.record(id) == nil else { continue }
+            if let message = await DownloadStore.shared.download(itemID: id, api: api) {
+                downloadMessage = message
+                return
+            }
+        }
+    }
+
     private func setFavorite(_ favorite: Bool) async {
         do {
             let data = try await api.setFavorite(favorite, itemID: seriesID)
@@ -376,10 +416,13 @@ private struct EpisodeRow: View {
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                Text(meta)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text3)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    DownloadMarker(itemID: episode.id)
+                    Text(meta)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text3)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -403,5 +446,32 @@ private struct EpisodeRow: View {
             parts.append(left)
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// A small icon on an episode row: downloaded, or the download's progress.
+private struct DownloadMarker: View {
+    let itemID: String?
+
+    var body: some View {
+        if let record = DownloadStore.shared.record(itemID) {
+            switch record.state {
+            case .done:
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityLabel("Downloaded")
+            case .queued, .downloading, .paused:
+                Text("\(Int(record.fraction * 100))%")
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityLabel("Downloading")
+            case .failed:
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.orange)
+                    .accessibilityLabel("Download failed")
+            }
+        }
     }
 }

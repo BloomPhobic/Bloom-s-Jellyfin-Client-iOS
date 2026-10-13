@@ -60,22 +60,41 @@ final class PlaybackSession: Identifiable {
     static let nextCardLead: Double = 30
     static let countdownSeconds: Double = 10
 
+    /// Playing downloads with no connection: nothing is asked of the server, and progress is kept
+    /// on the phone until it can be sent.
+    let isOffline: Bool
+    /// The current item plays from a downloaded file.
+    private(set) var isPlayingDownload = false
+
     /// Returns nil if the item has no playable source.
-    init?(api: LibraryAPI, item: BaseItemDto, mediaSource: MediaSourceInfo? = nil, startSeconds: Double) {
+    init?(api: LibraryAPI, item: BaseItemDto, mediaSource: MediaSourceInfo? = nil, startSeconds: Double, offline: Bool = false) {
         guard let itemID = item.id,
               let source = mediaSource ?? item.mediaSources?.first,
-              let url = api.streamURL(itemID: itemID, mediaSourceID: source.id) else {
+              let url = Self.playableURL(api: api, itemID: itemID, mediaSourceID: source.id) else {
             return nil
         }
         self.api = api
         self.item = item
+        isOffline = offline
         initialURL = url
         initialStart = startSeconds
         currentURL = url
+        isPlayingDownload = url.isFileURL
         lastGoodPosition = startSeconds
         mediaSourceID = source.id
-        reporter = PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
-        Self.logPlay(item: item, source: source, startSeconds: startSeconds)
+        reporter = offline ? nil : PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
+        Self.logPlay(item: item, source: source, startSeconds: startSeconds, local: url.isFileURL)
+    }
+
+    /// The downloaded file if there is one (no data used, works offline), otherwise the stream.
+    private static func playableURL(api: LibraryAPI, itemID: String, mediaSourceID: String?) -> URL? {
+        DownloadStore.shared.fileURL(itemID: itemID, mediaSourceID: mediaSourceID)
+            ?? api.streamURL(itemID: itemID, mediaSourceID: mediaSourceID)
+    }
+
+    /// A wide image of an item: the downloaded copy when there is one.
+    func stillURL(_ item: BaseItemDto) -> URL? {
+        DownloadStore.shared.stillURL(item.id) ?? api.imageURL(Artwork.landscape(item), maxWidth: 400)
     }
 
     var title: String {
@@ -106,6 +125,10 @@ final class PlaybackSession: Identifiable {
     /// Loads the skip markers, the next episode and the season list for the current item.
     func loadExtras() async {
         guard let itemID = item.id else { return }
+        if isOffline {
+            loadOfflineExtras()
+            return
+        }
         do {
             let found = try await api.segments(itemID: itemID)
             segments = found.compactMap { segment -> PlaybackSegment? in
@@ -132,7 +155,26 @@ final class PlaybackSession: Identifiable {
         await loadSeason()
     }
 
+    /// Without a connection: skip markers saved with the download, and the show's other downloaded
+    /// episodes for Next and the episode list.
+    private func loadOfflineExtras() {
+        let downloads = DownloadStore.shared
+        let record = downloads.record(item.id)
+        segments = (record?.segments ?? []).compactMap { segment -> PlaybackSegment? in
+            guard let type = segment.type, let start = segment.startTicks, let end = segment.endTicks, end > start else { return nil }
+            return PlaybackSegment(type: type, start: Double(start) / 10_000_000, end: Double(end) / 10_000_000)
+        }
+        .sorted { $0.start < $1.start }
+        nextEpisode = isEpisode ? downloads.nextEpisode(after: item, userID: record?.userID) : nil
+        seasonEpisodes = isEpisode ? downloads.episodes(seriesID: item.seriesID, userID: record?.userID).map(\.item) : []
+        AppLog.shared.log("Offline: \(segments.count) marker(s); next: \(nextEpisode?.episodeLabel ?? "none")")
+    }
+
     func loadSeason(_ seasonID: String? = nil) async {
+        if isOffline {
+            loadOfflineExtras()
+            return
+        }
         guard isEpisode, let seriesID = item.seriesID, let seasonID = seasonID ?? item.seasonID else { return }
         if let episodes = try? await api.episodes(seriesID: seriesID, seasonID: seasonID) {
             seasonEpisodes = episodes
@@ -149,6 +191,9 @@ final class PlaybackSession: Identifiable {
         }
         guard player.duration > 0, !player.isBuffering else { return }
         reporter?.update(position: player.position, isPaused: player.isPaused)
+        if let itemID = item.id {
+            DownloadStore.shared.noteProgress(itemID: itemID, position: player.position, duration: player.duration, synced: !isOffline)
+        }
         lastGoodPosition = player.position
         // Playing fine for a while after a retry: allow fresh retries for the next problem.
         if retryCount > 0, player.position > retryFromPosition + 30 {
@@ -247,28 +292,37 @@ final class PlaybackSession: Identifiable {
         countdownEnd = nil
 
         let full: BaseItemDto
-        do {
-            full = try await api.item(episodeID)
-        } catch {
-            AppLog.shared.log("Couldn't open \(episode.name ?? episodeID): \(error.localizedDescription)", level: .error)
-            return
+        if isOffline, let record = DownloadStore.shared.record(episodeID) {
+            full = record.item
+        } else {
+            do {
+                full = try await api.item(episodeID)
+            } catch {
+                AppLog.shared.log("Couldn't open \(episode.name ?? episodeID): \(error.localizedDescription)", level: .error)
+                return
+            }
         }
         guard let source = full.mediaSources?.first,
-              let url = api.streamURL(itemID: episodeID, mediaSourceID: source.id) else {
+              let url = Self.playableURL(api: api, itemID: episodeID, mediaSourceID: source.id) else {
             AppLog.shared.log("No playable file for \(full.name ?? episodeID)", level: .error)
             return
         }
 
         reporter?.stop()
-        let start = resume && !full.isPlayed ? full.resumeSeconds : 0
-        Self.logPlay(item: full, source: source, startSeconds: start)
+        saveDownloadProgress()
+        var start = resume && !full.isPlayed ? full.resumeSeconds : 0
+        if resume, let record = DownloadStore.shared.record(episodeID), record.state == .done {
+            start = record.resumeSeconds
+        }
+        Self.logPlay(item: full, source: source, startSeconds: start, local: url.isFileURL)
         item = full
         mediaSourceID = source.id
         segments = []
         nextEpisode = nil
         nextCardDismissed = false
-        reporter = PlaybackReporter(client: api.client, itemID: episodeID, mediaSourceID: source.id)
+        reporter = isOffline ? nil : PlaybackReporter(client: api.client, itemID: episodeID, mediaSourceID: source.id)
         currentURL = url
+        isPlayingDownload = url.isFileURL
         lastGoodPosition = start
         retryCount = 0
         player.load(url: url, startSeconds: start)
@@ -278,8 +332,13 @@ final class PlaybackSession: Identifiable {
     /// The app switched to another server address (for example Tailscale dropped): reopen the stream
     /// from the new address at the same position.
     func handoff(to newAPI: LibraryAPI) {
-        guard newAPI.client.configuration.url != api.client.configuration.url, let itemID = item.id else { return }
+        guard !isOffline, newAPI.client.configuration.url != api.client.configuration.url, let itemID = item.id else { return }
         api = newAPI
+        if isPlayingDownload {
+            // The file is on the phone; only the progress reports need the new address.
+            reporter = PlaybackReporter(client: newAPI.client, itemID: itemID, mediaSourceID: mediaSourceID)
+            return
+        }
         guard let url = newAPI.streamURL(itemID: itemID, mediaSourceID: mediaSourceID) else { return }
         let position = player.position
         AppLog.shared.log("Address changed during playback; reopening from \(newAPI.client.configuration.url.absoluteString) at \(ItemDetailView.timeText(position))")
@@ -292,13 +351,20 @@ final class PlaybackSession: Identifiable {
 
     func close() {
         reporter?.stop()
+        saveDownloadProgress()
         player.stop()
     }
 
-    private static func logPlay(item: BaseItemDto, source: MediaSourceInfo, startSeconds: Double) {
+    /// The final position on a downloaded file, so it's there next time even without a connection.
+    private func saveDownloadProgress() {
+        guard let itemID = item.id, player.duration > 0 else { return }
+        DownloadStore.shared.noteProgress(itemID: itemID, position: player.position, duration: player.duration, synced: !isOffline, force: true)
+    }
+
+    private static func logPlay(item: BaseItemDto, source: MediaSourceInfo, startSeconds: Double, local: Bool) {
         let log = AppLog.shared
         let title = [item.seriesName, item.episodeLabel, item.name].compactMap { $0 }.joined(separator: " · ")
-        log.log("Play: \(title) [\(source.name ?? "source")]" + (startSeconds > 0 ? " from \(ItemDetailView.timeText(startSeconds))" : ""))
+        log.log("Play: \(title) [\(local ? "downloaded file" : source.name ?? "source")]" + (startSeconds > 0 ? " from \(ItemDetailView.timeText(startSeconds))" : ""))
         for line in MediaSummary.lines(for: source) {
             log.log("  \(line)")
         }

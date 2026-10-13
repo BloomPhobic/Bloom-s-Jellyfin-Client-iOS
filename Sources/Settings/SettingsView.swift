@@ -7,6 +7,8 @@ struct SettingsView: View {
     @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
     @State private var imageCacheBytes = 0
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
+    @AppStorage(DownloadStore.cellularKey) private var downloadOverCellular = false
+    @State private var confirmDeleteDownloads = false
 
     private var accentHex: String {
         get { AccentStore.shared.hex }
@@ -55,6 +57,30 @@ struct SettingsView: View {
                     Text("Video")
                 } footer: {
                     Text("Changes apply the next time a video starts.")
+                }
+
+                Section {
+                    LabeledContent("Downloads", value: DownloadStore.format(DownloadStore.shared.usedBytes(userID: store.session?.userID)))
+                    Toggle("Download over mobile data", isOn: $downloadOverCellular)
+                        .onChange(of: downloadOverCellular) {
+                            DownloadStore.shared.cellularSettingChanged()
+                        }
+                    if !DownloadStore.shared.list(for: store.session?.userID).isEmpty {
+                        Button("Delete all downloads", role: .destructive) {
+                            confirmDeleteDownloads = true
+                        }
+                        .confirmationDialog("Delete all downloads?", isPresented: $confirmDeleteDownloads, titleVisibility: .visible) {
+                            Button("Delete all", role: .destructive) {
+                                DownloadStore.shared.deleteAll(userID: store.session?.userID)
+                            }
+                        } message: {
+                            Text("Everything this account downloaded is removed from this iPhone. Nothing changes on the server.")
+                        }
+                    }
+                } header: {
+                    Text("Downloads")
+                } footer: {
+                    Text("Downloads are the original files, so big movies can take several GB. With mobile data off, downloads wait for Wi-Fi.")
                 }
 
                 Section {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The app's dark look ("Bloom's Archive dark purple"). The accent comes from Settings.
 enum Theme {
-    /// The accent chosen in Settings. Use this, not `Theme.accent` (that's iOS's default blue).
+    /// The accent chosen in Settings. Use this, not `Color.accentColor` (that's iOS's default blue).
     static var accent: Color { AccentStore.shared.color }
     static let background = Color(red: 0x0D / 255, green: 0x0A / 255, blue: 0x12 / 255)
     static let surface = Color(red: 0x17 / 255, green: 0x12 / 255, blue: 0x1F / 255)

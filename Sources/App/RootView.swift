@@ -4,12 +4,14 @@ import UIKit
 enum AppTab: Hashable, CaseIterable {
     case home
     case search
+    case downloads
     case settings
 
     var title: String {
         switch self {
         case .home: return "Home"
         case .search: return "Search"
+        case .downloads: return "Downloads"
         case .settings: return "Settings"
         }
     }
@@ -18,6 +20,7 @@ enum AppTab: Hashable, CaseIterable {
         switch self {
         case .home: return selected ? "house.fill" : "house"
         case .search: return "magnifyingglass"
+        case .downloads: return selected ? "arrow.down.circle.fill" : "arrow.down.circle"
         case .settings: return selected ? "gearshape.fill" : "gearshape"
         }
     }
@@ -51,6 +54,10 @@ struct RootView: View {
             .tabBarSpace()
             .tag(AppTab.search)
 
+            DownloadsView()
+                .tabBarSpace()
+                .tag(AppTab.downloads)
+
             SettingsView()
                 .tabBarSpace()
                 .tag(AppTab.settings)
@@ -62,7 +69,7 @@ struct RootView: View {
                     switch tab {
                     case .home: homeNavigator.path = []
                     case .search: searchNavigator.path = []
-                    case .settings: break
+                    case .downloads, .settings: break
                     }
                 }
             }
@@ -95,6 +102,7 @@ struct RootView: View {
             didRunStartupChecks = true
             logStartupInfo()
             KeychainCheck.run()
+            DownloadStore.shared.attach(store)
             await store.start()
         }
     }
@@ -171,7 +179,7 @@ private struct FloatingTabBar: View {
             }
         }
         .padding(5)
-        .frame(width: 300)
+        .frame(width: 352)
         .background(Capsule().fill(Theme.raised2.opacity(0.96)))
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
         .shadow(color: .black.opacity(0.45), radius: 18, y: 8)

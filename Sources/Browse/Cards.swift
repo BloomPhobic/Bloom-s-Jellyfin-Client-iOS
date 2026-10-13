@@ -52,6 +52,16 @@ final class ImageCache {
         if let hit = cached(url) {
             return hit
         }
+        // Artwork saved with a download.
+        if url.isFileURL {
+            let image = await Task.detached(priority: .userInitiated) {
+                UIImage(contentsOfFile: url.path)?.preparingForDisplay()
+            }.value
+            if let image {
+                memory.setObject(image, forKey: url as NSURL)
+            }
+            return image
+        }
         guard let result = try? await session.data(from: url),
               (result.1 as? HTTPURLResponse)?.statusCode == 200 else {
             return nil
