@@ -151,6 +151,7 @@ final class SessionStore {
                 log.log("Using \(newRoute.kind.label): \(newRoute.address) (\(ms) ms)")
                 route = newRoute
                 rebuildClient()
+                NotificationCenter.default.post(name: .serverAddressChanged, object: nil)
             } else {
                 route = newRoute
             }
@@ -611,6 +612,8 @@ extension Notification.Name {
     static let requestUnauthorized = Notification.Name("requestUnauthorized")
     /// The connection came back, or the app returned after a long time: pages should reload.
     static let contentShouldRefresh = Notification.Name("contentShouldRefresh")
+    /// The app switched to another address of the same server (home network, Tailscale, public).
+    static let serverAddressChanged = Notification.Name("serverAddressChanged")
 }
 
 /// Lets any screen report a failed request without knowing about accounts.

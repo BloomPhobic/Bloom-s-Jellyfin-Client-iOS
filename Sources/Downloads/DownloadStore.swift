@@ -128,6 +128,7 @@ final class DownloadStore {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var lastProgressNote: [String: Date] = [:]
     @ObservationIgnored private var refreshObserver: NSObjectProtocol?
+    @ObservationIgnored private var addressObserver: NSObjectProtocol?
     @ObservationIgnored private var isSyncing = false
     /// Download speed per item, in bytes a second, smoothed so the number doesn't jump around.
     private(set) var speeds: [String: Double] = [:]
@@ -150,6 +151,11 @@ final class DownloadStore {
         refreshObserver = NotificationCenter.default.addObserver(forName: .contentShouldRefresh, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.connectionReturned()
+            }
+        }
+        addressObserver = NotificationCenter.default.addObserver(forName: .serverAddressChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.restartMovedDownloads()
             }
         }
     }
@@ -394,10 +400,31 @@ final class DownloadStore {
     /// task starts, so a task waiting for Wi-Fi would otherwise keep waiting. Ones that have started
     /// are stopped with their resume data and continue from where they were.
     func cellularSettingChanged() {
+        restartUnfinished { _, _ in true }
+        AppLog.shared.log("Mobile data for downloads: \(Self.allowsCellular ? "on" : "off")")
+    }
+
+    /// Restarts running tasks still aimed at an old server address (the home network one after
+    /// leaving Wi-Fi, say), which would otherwise keep waiting for an address they can't reach.
+    private func restartMovedDownloads() {
+        restartUnfinished { task, url in
+            guard let url, let old = task.originalRequest?.url else { return false }
+            let moved = old.host != url.host || old.port != url.port || old.scheme != url.scheme
+            if moved {
+                AppLog.shared.log("Download moved to the server address in use now")
+            }
+            return moved
+        }
+    }
+
+    /// Stops unfinished tasks (keeping what has arrived) and starts them again with the current
+    /// settings and server address.
+    private func restartUnfinished(where shouldRestart: (URLSessionDownloadTask, URL?) -> Bool) {
         for record in records.values where record.state == .queued || record.state == .downloading {
             guard let task = tasks[record.id] else { continue }
             let id = record.id
             let url = currentAPI(for: record)?.streamURL(itemID: id, mediaSourceID: record.mediaSourceID)
+            guard shouldRestart(task, url) else { continue }
             tasks[id] = nil
             clearSpeed(id)
             guard record.receivedBytes > 0 else {
@@ -419,7 +446,6 @@ final class DownloadStore {
                 }
             })
         }
-        AppLog.shared.log("Mobile data for downloads: \(Self.allowsCellular ? "on" : "off")")
     }
 
     private func startTask(_ record: DownloadRecord, url: URL?) {
@@ -427,10 +453,11 @@ final class DownloadStore {
         let task: URLSessionDownloadTask
         if let data = try? Data(contentsOf: resumeURL) {
             try? FileManager.default.removeItem(at: resumeURL)
-            // The resume data carries the old request, including whether it may use mobile data.
-            let patched = ResumeData.settingCellular(Self.allowsCellular, in: data)
+            // The resume data carries the old request: the address it used (the home network one,
+            // say, which can't be reached on mobile data) and whether it may use mobile data.
+            let patched = ResumeData.updating(data, cellular: Self.allowsCellular, url: url)
             if patched == nil {
-                AppLog.shared.log("Couldn't apply the mobile-data setting to a resumed download", level: .warning)
+                AppLog.shared.log("Couldn't update a resumed download's address and mobile-data setting", level: .warning)
             }
             task = urlSession.downloadTask(withResumeData: patched ?? data)
         } else if let url {
@@ -583,6 +610,7 @@ final class DownloadStore {
     private func connectionReturned() {
         guard let store = sessionStore, store.isConnected else { return }
         Task { await syncProgress() }
+        restartMovedDownloads()
         for record in records.values where record.state == .failed && record.retryable {
             resume(record.id)
         }
@@ -780,8 +808,11 @@ private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
 /// whether the continued download may use mobile data.
 enum ResumeData {
     private static let requestKeys = ["NSURLSessionResumeCurrentRequest", "NSURLSessionResumeOriginalRequest"]
+    private static let urlKey = "NSURLSessionDownloadURL"
 
-    static func settingCellular(_ allowed: Bool, in data: Data) -> Data? {
+    /// Sets whether the continued download may use mobile data, and points it at the server address
+    /// in use now (when given), so a download started at home can continue elsewhere.
+    static func updating(_ data: Data, cellular allowed: Bool, url: URL?) -> Data? {
         guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
         // Newer iOS versions wrap the whole dictionary in a keyed archive.
         let isArchive = plist["$archiver"] != nil
@@ -794,20 +825,29 @@ enum ResumeData {
         }
         var changed = dictionary
         var found = false
+        func update(_ copy: NSMutableURLRequest) {
+            copy.allowsCellularAccess = allowed
+            if let url {
+                copy.url = url
+            }
+        }
         for key in requestKeys {
             if let archived = dictionary[key] as? Data,
                let request = unarchive(archived) as? NSURLRequest,
                let copy = request.mutableCopy() as? NSMutableURLRequest {
-                copy.allowsCellularAccess = allowed
+                update(copy)
                 guard let encoded = try? NSKeyedArchiver.archivedData(withRootObject: copy, requiringSecureCoding: false) else { return nil }
                 changed[key] = encoded
                 found = true
             } else if let request = dictionary[key] as? NSURLRequest,
                       let copy = request.mutableCopy() as? NSMutableURLRequest {
-                copy.allowsCellularAccess = allowed
+                update(copy)
                 changed[key] = copy
                 found = true
             }
+        }
+        if let url, dictionary[urlKey] != nil {
+            changed[urlKey] = url.absoluteString
         }
         guard found else { return nil }
         if isArchive {
