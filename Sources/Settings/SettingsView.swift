@@ -2,12 +2,16 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(SessionStore.self) private var store
-    @AppStorage(Appearance.accentKey) private var accentHex = Appearance.defaultAccentHex
     @AppStorage(PlayerSettings.hdrPassthroughKey) private var hdrPassthrough = true
     @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
     @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
     @State private var imageCacheBytes = 0
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
+
+    private var accentHex: String {
+        get { AccentStore.shared.hex }
+        nonmutating set { AccentStore.shared.hex = newValue }
+    }
 
     var body: some View {
         NavigationStack {

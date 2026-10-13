@@ -238,8 +238,8 @@ private struct OptionChip: View {
             .font(.subheadline)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Capsule().fill(Color.accentColor.opacity(0.16)))
-            .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: 1))
+            .background(Capsule().fill(Theme.accent.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(Theme.accent, lineWidth: 1))
             .foregroundStyle(Theme.text)
         }
         .buttonStyle(.plain)

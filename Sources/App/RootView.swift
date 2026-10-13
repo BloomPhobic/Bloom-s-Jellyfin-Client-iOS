@@ -153,13 +153,13 @@ private struct FloatingTabBar: View {
                         Text(tab.title)
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundStyle(isSelected ? Color.accentColor : Theme.text3)
+                    .foregroundStyle(isSelected ? Theme.accent : Theme.text3)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background {
                         if isSelected {
                             Capsule()
-                                .fill(Color.accentColor.opacity(0.15))
+                                .fill(Theme.accent.opacity(0.15))
                                 .matchedGeometryEffect(id: "highlight", in: highlight)
                         }
                     }
@@ -265,7 +265,7 @@ private struct StatusBanner: View {
     private func tint(_ kind: Kind) -> Color {
         switch kind {
         case .offline, .unreachable: return .orange
-        case .notice: return Color.accentColor
+        case .notice: return Theme.accent
         }
     }
 }

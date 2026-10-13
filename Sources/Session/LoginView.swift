@@ -130,7 +130,7 @@ struct LoginView: View {
                                 isSelected: isSelected
                             )
                             .scaleEffect(isSelected ? 1.06 : 1)
-                            .shadow(color: isSelected ? Color.accentColor.opacity(0.45) : .clear, radius: 12)
+                            .shadow(color: isSelected ? Theme.accent.opacity(0.45) : .clear, radius: 12)
                             Text(user.name ?? "?")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(Theme.text)
@@ -138,7 +138,7 @@ struct LoginView: View {
                             if alreadySignedIn {
                                 Text("Signed in")
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(Theme.accent)
                             }
                         }
                     }
@@ -221,7 +221,7 @@ struct LoginView: View {
                     focus = .username
                 }
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.accent)
             }
         }
     }
@@ -340,7 +340,7 @@ struct QuickConnectView: View {
                             .foregroundStyle(Theme.text)
                             .frame(width: 44, height: 56)
                             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised2))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.accent.opacity(0.5), lineWidth: 1))
                     }
                 }
                 .textSelection(.enabled)
@@ -360,7 +360,7 @@ struct QuickConnectView: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.bordered)
-                .tint(Color.accentColor)
+                .tint(Theme.accent)
                 HStack(spacing: 8) {
                     ProgressView()
                     Text(isSigningIn ? "Signing in…" : "Waiting for approval…")

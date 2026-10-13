@@ -5,6 +5,12 @@ import UIKit
 enum OrientationLock {
     static var mask: UIInterfaceOrientationMask = .allButUpsideDown
 
+    static var isLandscape: Bool {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation.isLandscape ?? false
+    }
+
     /// Allows `allowed`, then rotates the screen to `rotateTo`.
     static func set(_ allowed: UIInterfaceOrientationMask, rotateTo: UIInterfaceOrientationMask) {
         mask = allowed

@@ -271,7 +271,7 @@ struct HomeView: View {
                         Text(kicker)
                             .font(.system(size: 11, weight: .bold))
                             .tracking(1.2)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.accent)
                         Text(title)
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(Theme.text)
@@ -351,7 +351,7 @@ struct HomeView: View {
                         Spacer()
                         Text("See all")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.accent)
                     }
                     .padding(.horizontal, 20)
                     .contentShape(Rectangle())
@@ -397,7 +397,10 @@ struct HomeView: View {
         defer { isStartingPlayback = false }
         do {
             let full = try await api.item(id)
-            playback = PlaybackSession(api: api, item: full, startSeconds: full.isPlayed ? 0 : full.resumeSeconds)
+            // No slide-up: the player appears at once and rotates to landscape straight away.
+            withTransaction(\.disablesAnimations, true) {
+                playback = PlaybackSession(api: api, item: full, startSeconds: full.isPlayed ? 0 : full.resumeSeconds)
+            }
         } catch {
             AppLog.shared.log("Couldn't start \(item.name ?? id): \(error.localizedDescription)", level: .error)
         }
@@ -477,7 +480,7 @@ private struct LibraryCard: View {
                 HStack(spacing: 7) {
                     Image(systemName: icon)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Theme.accent)
                     Text(library.name ?? "Library")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.text)

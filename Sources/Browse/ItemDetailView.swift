@@ -93,7 +93,7 @@ struct ItemDetailView: View {
                     if isEpisode {
                         Text([item.seriesName, item.episodeLabel].compactMap { $0 }.joined(separator: " · "))
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.accent)
                     }
                     Text(item.name ?? "")
                         .font(.system(size: 26, weight: .bold))
@@ -270,7 +270,10 @@ struct ItemDetailView: View {
             errorMessage = "Could not build the stream URL."
             return
         }
-        playback = session
+        // No slide-up: the player appears at once and rotates to landscape straight away.
+        withTransaction(\.disablesAnimations, true) {
+            playback = session
+        }
     }
 
     static func minutesLeft(_ item: BaseItemDto) -> String? {
@@ -394,7 +397,7 @@ struct RowLabel: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 17))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.accent)
                     .frame(width: 24)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -491,7 +494,7 @@ struct ExpandableText: View {
                 }
                 .font(.system(size: 15, weight: .semibold))
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.accent)
             }
         }
     }

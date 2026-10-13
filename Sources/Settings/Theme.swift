@@ -2,6 +2,8 @@ import SwiftUI
 
 /// The app's dark look ("Bloom's Archive dark purple"). The accent comes from Settings.
 enum Theme {
+    /// The accent chosen in Settings. Use this, not `Theme.accent` (that's iOS's default blue).
+    static var accent: Color { AccentStore.shared.color }
     static let background = Color(red: 0x0D / 255, green: 0x0A / 255, blue: 0x12 / 255)
     static let surface = Color(red: 0x17 / 255, green: 0x12 / 255, blue: 0x1F / 255)
     static let raised = Color(red: 0x1B / 255, green: 0x15 / 255, blue: 0x24 / 255)
@@ -28,7 +30,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Theme.onAccent)
             .frame(maxWidth: .infinity)
             .frame(height: height)
-            .background(Capsule().fill(Color.accentColor))
+            .background(Capsule().fill(Theme.accent))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(Theme.press, value: configuration.isPressed)
@@ -42,13 +44,13 @@ struct TileButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(isOn ? Color.accentColor : Theme.text)
+            .foregroundStyle(isOn ? Theme.accent : Theme.text)
             .frame(maxWidth: .infinity)
             .frame(height: 64)
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.raised))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(isOn ? Color.accentColor : Theme.line, lineWidth: 1)
+                    .strokeBorder(isOn ? Theme.accent : Theme.line, lineWidth: 1)
             )
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(Theme.press, value: configuration.isPressed)
@@ -92,7 +94,7 @@ struct Pill: View {
             .padding(.horizontal, 14)
             .frame(height: 36)
             .foregroundStyle(isSelected ? Theme.onAccent : Theme.text)
-            .background(Capsule().fill(isSelected ? Color.accentColor : Theme.raised))
+            .background(Capsule().fill(isSelected ? Theme.accent : Theme.raised))
             .overlay(Capsule().strokeBorder(isSelected ? Color.clear : Theme.line, lineWidth: 1))
     }
 }
@@ -106,7 +108,7 @@ struct LogoMark: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(Color.accentColor)
+            .fill(Theme.accent)
             .frame(width: size, height: size)
             .overlay {
                 Image(systemName: "play.fill")
@@ -114,7 +116,7 @@ struct LogoMark: View {
                     .foregroundStyle(Theme.onAccent)
                     .offset(x: size * 0.03)
             }
-            .shadow(color: Color.accentColor.opacity(0.4), radius: size * 0.22)
+            .shadow(color: Theme.accent.opacity(0.4), radius: size * 0.22)
             // Only a scale change: cheap for the GPU, unlike animating the shadow.
             .scaleEffect(breathe ? 1.04 : 1)
             .onAppear {
@@ -178,7 +180,7 @@ struct ProgressBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.15))
                 Capsule()
-                    .fill(Color.accentColor)
+                    .fill(Theme.accent)
                     .frame(width: proxy.size.width * CGFloat(min(max(fraction, 0), 1)))
             }
         }

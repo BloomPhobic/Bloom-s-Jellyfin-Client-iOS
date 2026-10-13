@@ -66,6 +66,7 @@ struct PlayerView: View {
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        .modifier(AccentTint())
         .task {
             await session.loadExtras()
         }
@@ -154,7 +155,7 @@ struct PlayerView: View {
                             Image(systemName: panel == .episodes ? "rectangle.stack.fill" : "rectangle.stack")
                                 .font(.system(size: 16, weight: .semibold))
                         }
-                        .buttonStyle(CircleButtonStyle(fill: panel == .episodes ? Color.accentColor.opacity(0.35) : Theme.scrim))
+                        .buttonStyle(CircleButtonStyle(fill: panel == .episodes ? Theme.accent.opacity(0.35) : Theme.scrim))
                         .accessibilityLabel("Episodes")
                     }
                     AudioTrackMenu(player: player)
@@ -165,7 +166,7 @@ struct PlayerView: View {
                         Text("Aa")
                             .font(.system(size: 15, weight: .bold))
                     }
-                    .buttonStyle(CircleButtonStyle(fill: panel == .subtitles ? Color.accentColor.opacity(0.35) : Theme.scrim))
+                    .buttonStyle(CircleButtonStyle(fill: panel == .subtitles ? Theme.accent.opacity(0.35) : Theme.scrim))
                     .accessibilityLabel("Subtitle size, style and timing")
                     Button {
                         showStats.toggle()
@@ -318,7 +319,8 @@ struct PlayerView: View {
 
     /// Top centre, while the connection is down: how long the buffer will last, or that playback is
     /// waiting for the connection to come back. The full pill shows for the first few seconds, with
-    /// the controls, and while stalled; otherwise it shrinks to a small icon. Tap the screen to see it again.
+    /// the controls, and while stalled; otherwise it shrinks to a small icon in the top-left corner.
+    /// Tap the screen to see it again.
     @ViewBuilder
     private var connectionPill: some View {
         let justWentOffline = offlineSince.map { Date().timeIntervalSince($0) < 5 } ?? false
@@ -342,12 +344,13 @@ struct PlayerView: View {
                 .background(Capsule().fill(Theme.background.opacity(expanded ? 0.85 : 0.6)))
                 .overlay(Capsule().strokeBorder(Color.orange.opacity(0.7), lineWidth: 1))
                 .padding(.top, showControls ? 64 : 12)
+                .padding(.leading, expanded ? 0 : 20)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(player.isBuffering ? "Offline, waiting for connection" : "Offline, playing from buffer")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: expanded ? .top : .topLeading)
         .animation(.easeInOut(duration: 0.25), value: connectionDown)
         .animation(.easeInOut(duration: 0.25), value: expanded)
         .allowsHitTesting(false)
@@ -372,7 +375,7 @@ struct PlayerView: View {
                     .padding(.horizontal, 16)
                     .frame(height: 40)
                     .background(Capsule().fill(Theme.background.opacity(0.8)))
-                    .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(Theme.accent, lineWidth: 1))
                 }
                 .buttonStyle(PressableStyle())
                 .transition(.opacity.combined(with: .move(edge: .trailing)))
@@ -454,9 +457,21 @@ struct PlayerView: View {
         return "Playback stopped because of an error."
     }
 
+    /// Stops playback, turns the (now black) player back to portrait, then removes it without the
+    /// slide-down, so Home never shows in landscape on the way out.
     private func close() {
         session.close()
-        dismiss()
+        showControls = false
+        let wasLandscape = OrientationLock.isLandscape
+        OrientationLock.set(.allButUpsideDown, rotateTo: .portrait)
+        Task {
+            if wasLandscape {
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+            withTransaction(\.disablesAnimations, true) {
+                dismiss()
+            }
+        }
     }
 
     private static func format(_ seconds: Double) -> String {
@@ -502,7 +517,7 @@ private struct SeekBar: View {
                     }
                 }
                 Capsule()
-                    .fill(Color.accentColor)
+                    .fill(Theme.accent)
                     .frame(width: width * fraction, height: track)
                 Circle()
                     .fill(Theme.text)
@@ -759,7 +774,7 @@ private struct EpisodePickerView: View {
                             Spacer()
                             if episode.id == session.item.id {
                                 Image(systemName: "speaker.wave.2.fill")
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(Theme.accent)
                             }
                         }
                     }

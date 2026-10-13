@@ -32,6 +32,31 @@ enum Appearance {
     }
 }
 
+/// The chosen accent. Views that read `Theme.accent` redraw when it changes, wherever they are
+/// (including the full-screen player, which doesn't always inherit the app's tint).
+@Observable
+final class AccentStore {
+    static let shared = AccentStore()
+
+    var hex: String {
+        didSet { UserDefaults.standard.set(hex, forKey: Appearance.accentKey) }
+    }
+
+    var color: Color { Appearance.color(hex: hex) }
+
+    private init() {
+        Appearance.migrateDefault()
+        hex = UserDefaults.standard.string(forKey: Appearance.accentKey) ?? Appearance.defaultAccentHex
+    }
+}
+
+/// Applies the accent as the tint for system controls (toggles, links, progress views).
+struct AccentTint: ViewModifier {
+    func body(content: Content) -> some View {
+        content.tint(Theme.accent)
+    }
+}
+
 extension Color {
     init?(hex: String) {
         var text = hex.trimmingCharacters(in: .whitespacesAndNewlines)

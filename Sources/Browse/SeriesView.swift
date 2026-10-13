@@ -64,7 +64,7 @@ struct SeriesView: View {
                     } label: {
                         Image(systemName: series.isFavorite ? "heart.fill" : "heart")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(series.isFavorite ? Color.accentColor : Theme.text)
+                            .foregroundStyle(series.isFavorite ? Theme.accent : Theme.text)
                             .symbolEffect(.bounce, value: series.isFavorite)
                     }
                     .buttonStyle(CircleButtonStyle(size: 36))
@@ -312,7 +312,10 @@ struct SeriesView: View {
         defer { isStartingPlayback = false }
         do {
             let full = try await api.item(id)
-            playback = PlaybackSession(api: api, item: full, startSeconds: full.isPlayed ? 0 : full.resumeSeconds)
+            // No slide-up: the player appears at once and rotates to landscape straight away.
+            withTransaction(\.disablesAnimations, true) {
+                playback = PlaybackSession(api: api, item: full, startSeconds: full.isPlayed ? 0 : full.resumeSeconds)
+            }
         } catch {
             AppLog.shared.log("Couldn't start \(episode.name ?? id): \(error.localizedDescription)", level: .error)
         }

@@ -144,13 +144,13 @@ struct WatchBadge: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .heavy))
                     .frame(width: 20, height: 20)
-                    .background(Circle().fill(Color.accentColor))
+                    .background(Circle().fill(Theme.accent))
             } else if let count = item.userData?.unplayedItemCount, count > 0, item.type != .episode, item.type != .movie {
                 Text(verbatim: "\(count)")
                     .font(.system(size: 11, weight: .heavy))
                     .padding(.horizontal, 6)
                     .frame(minWidth: 22, minHeight: 22)
-                    .background(Capsule().fill(Color.accentColor))
+                    .background(Capsule().fill(Theme.accent))
             }
         }
         .foregroundStyle(Theme.onAccent)
@@ -170,7 +170,7 @@ struct ProgressOverlay: View {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Rectangle().fill(Theme.scrim)
-                        Rectangle().fill(Color.accentColor)
+                        Rectangle().fill(Theme.accent)
                             .frame(width: proxy.size.width * CGFloat(min(percent, 100) / 100))
                     }
                 }

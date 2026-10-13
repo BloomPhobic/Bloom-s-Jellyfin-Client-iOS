@@ -20,7 +20,7 @@ struct AccountAvatar: View {
         }
         .frame(width: size, height: size)
         .overlay(
-            Circle().strokeBorder(isSelected ? Color.accentColor : Color.white.opacity(0.12), lineWidth: isSelected ? 3 : 1)
+            Circle().strokeBorder(isSelected ? Theme.accent : Color.white.opacity(0.12), lineWidth: isSelected ? 3 : 1)
         )
     }
 }
@@ -90,7 +90,7 @@ struct AccountsSection: View {
                         if isCurrent {
                             Text("Current")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(Theme.accent)
                         }
                     }
                 }
