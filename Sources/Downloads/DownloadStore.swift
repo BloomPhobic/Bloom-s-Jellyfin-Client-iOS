@@ -129,6 +129,9 @@ final class DownloadStore {
     @ObservationIgnored private var lastProgressNote: [String: Date] = [:]
     @ObservationIgnored private var refreshObserver: NSObjectProtocol?
     @ObservationIgnored private var isSyncing = false
+    /// Download speed per item, in bytes a second, smoothed so the number doesn't jump around.
+    private(set) var speeds: [String: Double] = [:]
+    @ObservationIgnored private var speedSamples: [String: (time: Date, bytes: Int64)] = [:]
 
     static var allowsCellular: Bool {
         UserDefaults.standard.bool(forKey: cellularKey)
@@ -217,24 +220,47 @@ final class DownloadStore {
         list(for: userID).reduce(0) { $0 + ($1.state == .done ? $1.totalBytes : $1.receivedBytes) }
     }
 
-    func statusText(_ record: DownloadRecord) -> String {
+    /// A download's row text: the sizes on the first line, then the percentage or what it's waiting for.
+    func statusLines(_ record: DownloadRecord) -> (sizes: String, status: String) {
         let size = Self.format(record.totalBytes)
+        let sizes = record.receivedBytes > 0 ? "\(Self.format(record.receivedBytes)) of \(size)" : size
+        let percent = "\(Int(record.fraction * 100))%"
         switch record.state {
         case .done:
-            return size
+            return (size, "Downloaded")
         case .queued, .downloading:
             if !isOnWiFi && !Self.allowsCellular {
-                return "Waiting for Wi-Fi"
+                return (sizes, "Waiting for Wi-Fi")
             }
             if record.receivedBytes == 0 {
-                return record.state == .queued ? "Queued · \(size)" : "Starting… · \(size)"
+                return (sizes, record.state == .queued ? "Queued" : "Starting…")
             }
-            return "\(Self.format(record.receivedBytes)) of \(size) · \(Int(record.fraction * 100))%"
+            if let speed = speed(record.id) {
+                return (sizes, "\(percent) · \(Self.formatSpeed(speed))")
+            }
+            return (sizes, percent)
         case .paused:
-            return "Paused · \(Int(record.fraction * 100))%"
+            return (sizes, "Paused · \(percent)")
         case .failed:
-            return record.errorMessage ?? "Download failed"
+            return (sizes, record.errorMessage ?? "Download failed")
         }
+    }
+
+    /// An item's current speed, if it has received something in the last few seconds.
+    func speed(_ id: String, now: Date = Date()) -> Double? {
+        guard let sample = speedSamples[id], now.timeIntervalSince(sample.time) < 5,
+              let speed = speeds[id], speed > 0 else { return nil }
+        return speed
+    }
+
+    /// Everything downloading right now, added up. Nil when nothing is moving.
+    func totalSpeed(userID: String?, now: Date = Date()) -> Double? {
+        let total = list(for: userID).compactMap { speed($0.id, now: now) }.reduce(0, +)
+        return total > 0 ? total : nil
+    }
+
+    static func formatSpeed(_ bytesPerSecond: Double) -> String {
+        "\(ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file))/s"
     }
 
     static func format(_ bytes: Int64) -> String {
@@ -306,6 +332,7 @@ final class DownloadStore {
     func pause(_ id: String) {
         guard let task = tasks[id] else { return }
         pausing.insert(id)
+        clearSpeed(id)
         task.cancel(byProducingResumeData: { data in
             guard let data else { return }
             try? data.write(to: DownloadFiles.resumeData(id))
@@ -336,6 +363,7 @@ final class DownloadStore {
         tasks[id]?.cancel()
         tasks[id] = nil
         pausing.remove(id)
+        clearSpeed(id)
         let name = Self.title(records[id]?.item)
         records[id] = nil
         try? FileManager.default.removeItem(at: DownloadFiles.folder(id))
@@ -349,16 +377,49 @@ final class DownloadStore {
         }
     }
 
-    /// Starts tasks that were waiting with the old mobile-data setting, so the new one applies.
+    /// Pauses every download of this account (keeping what has arrived).
+    func pauseAll(userID: String?) {
+        for record in list(for: userID) where record.state == .queued || record.state == .downloading {
+            pause(record.id)
+        }
+    }
+
+    func resumeAll(userID: String?) {
+        for record in list(for: userID) where record.state == .paused || record.state == .failed {
+            resume(record.id)
+        }
+    }
+
+    /// Restarts unfinished tasks so the new mobile-data setting applies. iOS fixes the setting when a
+    /// task starts, so a task waiting for Wi-Fi would otherwise keep waiting. Ones that have started
+    /// are stopped with their resume data and continue from where they were.
     func cellularSettingChanged() {
         for record in records.values where record.state == .queued || record.state == .downloading {
-            guard record.receivedBytes == 0, let task = tasks[record.id] else { continue }
-            tasks[record.id] = nil
-            task.cancel()
-            if let url = currentAPI(for: record)?.streamURL(itemID: record.id, mediaSourceID: record.mediaSourceID) {
+            guard let task = tasks[record.id] else { continue }
+            let id = record.id
+            let url = currentAPI(for: record)?.streamURL(itemID: id, mediaSourceID: record.mediaSourceID)
+            tasks[id] = nil
+            clearSpeed(id)
+            guard record.receivedBytes > 0 else {
+                task.cancel()
                 startTask(record, url: url)
+                continue
             }
+            task.cancel(byProducingResumeData: { data in
+                Task { @MainActor in
+                    let store = DownloadStore.shared
+                    // Deleted or restarted meanwhile.
+                    guard let current = store.records[id], store.tasks[id] == nil, current.state != .done else { return }
+                    if let data {
+                        try? data.write(to: DownloadFiles.resumeData(id))
+                    } else {
+                        AppLog.shared.log("Download of \(Self.title(current.item)) restarts from the beginning (no resume data)", level: .warning)
+                    }
+                    store.startTask(current, url: url)
+                }
+            })
         }
+        AppLog.shared.log("Mobile data for downloads: \(Self.allowsCellular ? "on" : "off")")
     }
 
     private func startTask(_ record: DownloadRecord, url: URL?) {
@@ -366,7 +427,12 @@ final class DownloadStore {
         let task: URLSessionDownloadTask
         if let data = try? Data(contentsOf: resumeURL) {
             try? FileManager.default.removeItem(at: resumeURL)
-            task = urlSession.downloadTask(withResumeData: data)
+            // The resume data carries the old request, including whether it may use mobile data.
+            let patched = ResumeData.settingCellular(Self.allowsCellular, in: data)
+            if patched == nil {
+                AppLog.shared.log("Couldn't apply the mobile-data setting to a resumed download", level: .warning)
+            }
+            task = urlSession.downloadTask(withResumeData: patched ?? data)
         } else if let url {
             var request = URLRequest(url: url)
             request.allowsCellularAccess = Self.allowsCellular
@@ -408,6 +474,7 @@ final class DownloadStore {
 
     fileprivate func progress(id: String, taskID: Int, received: Int64, expected: Int64) {
         guard isCurrent(id, taskID: taskID), var record = records[id], record.state != .done, !pausing.contains(id) else { return }
+        noteSpeed(id: id, received: received)
         record.receivedBytes = received
         if expected > 0 {
             record.totalBytes = expected
@@ -419,6 +486,7 @@ final class DownloadStore {
     fileprivate func finished(id: String, taskID: Int, error: String?) {
         guard isCurrent(id, taskID: taskID) else { return }
         tasks[id] = nil
+        clearSpeed(id)
         guard var record = records[id] else { return }
         if let error {
             record.state = .failed
@@ -443,6 +511,7 @@ final class DownloadStore {
     fileprivate func failed(id: String, taskID: Int, error: Error, resumeData: Data?) {
         guard isCurrent(id, taskID: taskID) else { return }
         tasks[id] = nil
+        clearSpeed(id)
         guard var record = records[id], record.state != .done else { return }
         if let resumeData {
             try? resumeData.write(to: DownloadFiles.resumeData(id))
@@ -568,6 +637,24 @@ final class DownloadStore {
 
     // MARK: - Helpers
 
+    private func noteSpeed(id: String, received: Int64) {
+        let now = Date()
+        guard let last = speedSamples[id], received >= last.bytes else {
+            speedSamples[id] = (now, received)
+            return
+        }
+        let elapsed = now.timeIntervalSince(last.time)
+        guard elapsed >= 1 else { return }
+        let current = Double(received - last.bytes) / elapsed
+        speeds[id] = speeds[id].map { $0 * 0.7 + current * 0.3 } ?? current
+        speedSamples[id] = (now, received)
+    }
+
+    private func clearSpeed(_ id: String) {
+        speedSamples[id] = nil
+        speeds[id] = nil
+    }
+
     private func currentAPI(for record: DownloadRecord) -> LibraryAPI? {
         guard let store = sessionStore, let client = store.client, store.session?.userID == record.userID else { return nil }
         return LibraryAPI(client: client, userID: record.userID)
@@ -686,5 +773,53 @@ private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         Task { @MainActor in
             DownloadStore.shared.backgroundEventsFinished()
         }
+    }
+}
+
+/// Edits iOS's resume data. It holds the original request archived inside it; that request decides
+/// whether the continued download may use mobile data.
+enum ResumeData {
+    private static let requestKeys = ["NSURLSessionResumeCurrentRequest", "NSURLSessionResumeOriginalRequest"]
+
+    static func settingCellular(_ allowed: Bool, in data: Data) -> Data? {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
+        // Newer iOS versions wrap the whole dictionary in a keyed archive.
+        let isArchive = plist["$archiver"] != nil
+        let dictionary: [String: Any]
+        if isArchive {
+            guard let unarchived = unarchive(data) as? [String: Any] else { return nil }
+            dictionary = unarchived
+        } else {
+            dictionary = plist
+        }
+        var changed = dictionary
+        var found = false
+        for key in requestKeys {
+            if let archived = dictionary[key] as? Data,
+               let request = unarchive(archived) as? NSURLRequest,
+               let copy = request.mutableCopy() as? NSMutableURLRequest {
+                copy.allowsCellularAccess = allowed
+                guard let encoded = try? NSKeyedArchiver.archivedData(withRootObject: copy, requiringSecureCoding: false) else { return nil }
+                changed[key] = encoded
+                found = true
+            } else if let request = dictionary[key] as? NSURLRequest,
+                      let copy = request.mutableCopy() as? NSMutableURLRequest {
+                copy.allowsCellularAccess = allowed
+                changed[key] = copy
+                found = true
+            }
+        }
+        guard found else { return nil }
+        if isArchive {
+            return try? NSKeyedArchiver.archivedData(withRootObject: changed as NSDictionary, requiringSecureCoding: false)
+        }
+        return try? PropertyListSerialization.data(fromPropertyList: changed, format: .binary, options: 0)
+    }
+
+    private static func unarchive(_ data: Data) -> Any? {
+        guard let unarchiver = try? NSKeyedUnarchiver(forReadingFrom: data) else { return nil }
+        unarchiver.requiresSecureCoding = false
+        defer { unarchiver.finishDecoding() }
+        return unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey)
     }
 }

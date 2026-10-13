@@ -19,6 +19,8 @@ struct SeriesView: View {
     @State private var playback: PlaybackSession?
     @State private var isStartingPlayback = false
     @State private var downloadMessage: String?
+    @State private var isQueueingSeason = false
+    @State private var confirmRemoveSeason = false
 
     var body: some View {
         ScrollView {
@@ -77,13 +79,6 @@ struct SeriesView: View {
                         } label: {
                             Label(series.isPlayed ? "Mark show unwatched" : "Mark show watched",
                                   systemImage: series.isPlayed ? "eye.slash" : "checkmark.circle")
-                        }
-                        if store.canDownload, !episodes.isEmpty {
-                            Button {
-                                Task { await downloadSeason() }
-                            } label: {
-                                Label("Download \(seasons.first { $0.id == loadedSeasonID }?.name ?? "season")", systemImage: "arrow.down.circle")
-                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -176,32 +171,30 @@ struct SeriesView: View {
                     .padding(.top, 20)
             }
 
+            if showsDownloads, !episodes.isEmpty {
+                seasonDownloadBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, seasons.count > 1 ? 14 : 22)
+            }
+
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
-                    NavigationLink(value: BrowseRoute.item(episode)) {
-                        EpisodeRow(episode: episode, api: api)
-                    }
-                    .buttonStyle(PressableStyle())
-                    .contextMenu {
-                        Button {
-                            Task { await togglePlayed(at: index) }
-                        } label: {
-                            Label(episode.isPlayed ? "Mark unwatched" : "Mark watched",
-                                  systemImage: episode.isPlayed ? "eye.slash" : "checkmark.circle")
+                    HStack(spacing: 4) {
+                        NavigationLink(value: BrowseRoute.item(episode)) {
+                            EpisodeRow(episode: episode, api: api)
                         }
-                        if let id = episode.id {
-                            if DownloadStore.shared.record(id) != nil {
-                                Button(role: .destructive) {
-                                    DownloadStore.shared.delete(id)
-                                } label: {
-                                    Label("Remove download", systemImage: "trash")
-                                }
-                            } else if store.canDownload {
-                                Button {
-                                    Task { downloadMessage = await DownloadStore.shared.download(itemID: id, api: api) }
-                                } label: {
-                                    Label("Download", systemImage: "arrow.down.circle")
-                                }
+                        .buttonStyle(PressableStyle())
+                        .contextMenu {
+                            Button {
+                                Task { await togglePlayed(at: index) }
+                            } label: {
+                                Label(episode.isPlayed ? "Mark unwatched" : "Mark watched",
+                                      systemImage: episode.isPlayed ? "eye.slash" : "checkmark.circle")
+                            }
+                        }
+                        if showsDownloads, let id = episode.id {
+                            EpisodeDownloadButton(itemID: id, api: api, canDownload: store.canDownload) { message in
+                                downloadMessage = message
                             }
                         }
                     }
@@ -210,8 +203,79 @@ struct SeriesView: View {
             .id(loadedSeasonID)
             .transition(.opacity)
             .padding(.horizontal, 16)
-            .padding(.top, seasons.count > 1 ? 14 : 22)
+            .padding(.top, showsDownloads && !episodes.isEmpty ? 12 : (seasons.count > 1 ? 14 : 22))
             .padding(.bottom, 24)
+        }
+    }
+
+    /// Download buttons show when the account may download, or something is downloaded already.
+    private var showsDownloads: Bool {
+        store.canDownload || episodes.contains { DownloadStore.shared.record($0.id) != nil }
+    }
+
+    /// The open season's episode count and its Download button (or how far the download is).
+    private var seasonDownloadBar: some View {
+        let records = episodes.compactMap { DownloadStore.shared.record($0.id) }
+        let done = records.filter { $0.state == .done }.count
+        let missing = episodes.count - records.count
+        let seasonName = seasons.first { $0.id == loadedSeasonID }?.name ?? "season"
+        return HStack(spacing: 10) {
+            Text(episodes.count == 1 ? "1 episode" : "\(episodes.count) episodes")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.text2)
+            Spacer(minLength: 0)
+            if missing > 0 && store.canDownload {
+                Button {
+                    Task {
+                        isQueueingSeason = true
+                        await downloadSeason()
+                        isQueueingSeason = false
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isQueueingSeason {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        Text(records.isEmpty ? "Download \(seasonName)" : "Download \(missing) more")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .foregroundStyle(Theme.accent)
+                    .background(Capsule().fill(Theme.raised))
+                    .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(isQueueingSeason)
+            } else if done < records.count {
+                Label("Downloading \(done) of \(records.count)", systemImage: "arrow.down.circle.dotted")
+                    .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.accent)
+                    .frame(height: 36)
+            } else if !records.isEmpty {
+                Button {
+                    confirmRemoveSeason = true
+                } label: {
+                    Label("Downloaded", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.horizontal, 14)
+                        .frame(height: 36)
+                        .foregroundStyle(Theme.accent)
+                        .background(Capsule().fill(Theme.raised))
+                }
+                .buttonStyle(PressableStyle())
+                .confirmationDialog("Remove the downloads of \(seasonName)?", isPresented: $confirmRemoveSeason, titleVisibility: .visible) {
+                    Button("Remove \(records.count == 1 ? "1 episode" : "\(records.count) episodes")", role: .destructive) {
+                        for record in records {
+                            DownloadStore.shared.delete(record.id)
+                        }
+                    }
+                } message: {
+                    Text("They stay on the server; only the copies on this iPhone are deleted.")
+                }
+            }
         }
     }
 
@@ -416,13 +480,10 @@ private struct EpisodeRow: View {
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                HStack(spacing: 5) {
-                    DownloadMarker(itemID: episode.id)
-                    Text(meta)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.text3)
-                        .lineLimit(1)
-                }
+                Text(meta)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text3)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -449,29 +510,98 @@ private struct EpisodeRow: View {
     }
 }
 
-/// A small icon on an episode row: downloaded, or the download's progress.
-private struct DownloadMarker: View {
-    let itemID: String?
+/// The download button at the end of an episode row: Download, a progress ring (tap to pause or
+/// continue), or Downloaded (tap to remove).
+private struct EpisodeDownloadButton: View {
+    let itemID: String
+    let api: LibraryAPI
+    let canDownload: Bool
+    let showMessage: (String) -> Void
+
+    @State private var isStarting = false
+    @State private var confirmRemove = false
 
     var body: some View {
-        if let record = DownloadStore.shared.record(itemID) {
+        let record = DownloadStore.shared.record(itemID)
+        Button {
+            tap(record)
+        } label: {
+            label(record)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(isStarting || (record == nil && !canDownload))
+        .accessibilityLabel(accessibilityText(record))
+        .confirmationDialog("Remove the download?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove download", role: .destructive) {
+                DownloadStore.shared.delete(itemID)
+            }
+        } message: {
+            Text("It stays on the server; only the copy on this iPhone is deleted.")
+        }
+    }
+
+    @ViewBuilder
+    private func label(_ record: DownloadRecord?) -> some View {
+        if isStarting {
+            ProgressView().controlSize(.small)
+        } else if let record {
             switch record.state {
             case .done:
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 12))
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22))
                     .foregroundStyle(Theme.accent)
-                    .accessibilityLabel("Downloaded")
-            case .queued, .downloading, .paused:
-                Text("\(Int(record.fraction * 100))%")
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Theme.accent)
-                    .accessibilityLabel("Downloading")
             case .failed:
-                Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 12))
+                Image(systemName: "exclamationmark.arrow.circlepath")
+                    .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(Color.orange)
-                    .accessibilityLabel("Download failed")
+            case .queued, .downloading, .paused:
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.15), lineWidth: 2.5)
+                    Circle()
+                        .trim(from: 0, to: max(0.02, record.fraction))
+                        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.4), value: record.fraction)
+                    Image(systemName: record.state == .paused ? "arrow.down" : "pause.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .frame(width: 22, height: 22)
             }
+        } else {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 22))
+                .foregroundStyle(Theme.text2)
+        }
+    }
+
+    private func tap(_ record: DownloadRecord?) {
+        guard let record else {
+            isStarting = true
+            Task {
+                if let message = await DownloadStore.shared.download(itemID: itemID, api: api) {
+                    showMessage(message)
+                }
+                isStarting = false
+            }
+            return
+        }
+        switch record.state {
+        case .queued, .downloading: DownloadStore.shared.pause(itemID)
+        case .paused, .failed: DownloadStore.shared.resume(itemID)
+        case .done: confirmRemove = true
+        }
+    }
+
+    private func accessibilityText(_ record: DownloadRecord?) -> String {
+        guard let record else { return "Download" }
+        switch record.state {
+        case .done: return "Downloaded. Remove download"
+        case .failed: return "Download failed. Retry"
+        case .paused: return "Download paused at \(Int(record.fraction * 100)) percent. Continue"
+        case .queued, .downloading: return "Downloading, \(Int(record.fraction * 100)) percent. Pause"
         }
     }
 }
