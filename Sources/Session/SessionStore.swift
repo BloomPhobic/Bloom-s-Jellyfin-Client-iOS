@@ -562,7 +562,7 @@ final class SessionStore {
         let configuration = JellyfinClient.Configuration(
             url: url,
             accessToken: accessToken,
-            client: "Jellyfin Client iOS",
+            client: "Bloom for iOS",
             deviceName: UIDevice.current.name,
             deviceID: deviceID,
             version: AppInfo.version

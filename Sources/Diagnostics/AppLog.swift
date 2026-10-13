@@ -60,6 +60,9 @@ final class AppLog {
 }
 
 enum AppInfo {
+    static let sourceURL = URL(string: "https://github.com/BloomPhobic/Bloom-s-Jellyfin-Client-iOS")!
+    static let privacyURL = URL(string: "https://bloomphobic.github.io/Bloom-s-Jellyfin-Client-iOS/privacy.html")!
+
     static var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     }

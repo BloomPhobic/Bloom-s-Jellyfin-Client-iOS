@@ -88,8 +88,24 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("About") {
+                Section {
                     LabeledContent("Version", value: "\(AppInfo.version) (build \(AppInfo.build))")
+                    Link(destination: AppInfo.sourceURL) {
+                        Label("Source code on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                    }
+                    Link(destination: AppInfo.privacyURL) {
+                        Label("Privacy policy", systemImage: "hand.raised")
+                    }
+                    NavigationLink {
+                        LicensesView()
+                            .tabBarClearance()
+                    } label: {
+                        Label("Open-source licences", systemImage: "doc.text")
+                    }
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text("Bloom's Player, a client for Jellyfin, by BloomPhobic. Jellyfin is a trademark of Jellyfin, Inc.; this app is not affiliated with or endorsed by the Jellyfin project.")
                 }
             }
             .themedBackground()

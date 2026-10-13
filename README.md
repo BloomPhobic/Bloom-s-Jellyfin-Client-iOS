@@ -1,4 +1,4 @@
-# Jellyfin Client for iOS
+# Bloom's Player
 
 A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in SwiftUI. Media is direct-played through mpv, so the server never has to transcode.
 
@@ -27,3 +27,9 @@ open JellyfinClient.xcodeproj
 ```
 
 Server addresses and credentials are entered in the app at runtime. Nothing server-specific is stored in this repository.
+
+## Privacy
+
+The app talks only to the Jellyfin servers you add, and collects nothing. See the [privacy policy](https://bloomphobic.github.io/Bloom-s-Jellyfin-Client-iOS/privacy.html).
+
+Jellyfin is a trademark of Jellyfin, Inc. This app is not affiliated with or endorsed by the Jellyfin project.
