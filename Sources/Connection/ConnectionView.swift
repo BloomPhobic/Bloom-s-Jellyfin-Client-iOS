@@ -104,6 +104,8 @@ struct ConnectionView: View {
             if let addMessage {
                 Text(addMessage.text)
                     .foregroundStyle(addMessage.isError ? Color.red : Color.secondary)
+            } else if AddressKind.isUnencryptedInternet(newAddress.trimmingCharacters(in: .whitespaces)) {
+                UnencryptedWarning(compact: false)
             } else {
                 Text("All addresses are checked at the same time, and the first one in this list that answers is used. New addresses are placed local network first, then Tailscale, then internet. Tap Edit to reorder.")
             }
@@ -160,6 +162,9 @@ struct AddressRow: View {
                         .foregroundStyle(.green)
                 }
             }
+            if AddressKind.isUnencryptedInternet(address) {
+                UnencryptedWarning(compact: true)
+            }
             if let result {
                 switch result.outcome {
                 case .reachable(_, _, let version, let ms):
@@ -177,5 +182,24 @@ struct AddressRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// Warns that an internet address uses plain http, so the password and viewing aren't encrypted.
+struct UnencryptedWarning: View {
+    /// A one-line caption for address rows; otherwise the full explanation.
+    let compact: Bool
+
+    var body: some View {
+        Label {
+            Text(compact
+                 ? "Not encrypted"
+                 : "This internet address uses http, so your password and what you watch travel unencrypted. Use https if your server supports it.")
+        } icon: {
+            Image(systemName: "lock.open.fill")
+        }
+        .font(compact ? .caption : .system(size: 13, weight: .semibold))
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

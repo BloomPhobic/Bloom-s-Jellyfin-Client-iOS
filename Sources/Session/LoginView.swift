@@ -174,6 +174,9 @@ struct LoginView: View {
                     .submitLabel(.go)
                     .onSubmit { Task { await signIn() } }
             }
+            if let address = store.route?.address, AddressKind.isUnencryptedInternet(address) {
+                UnencryptedWarning(compact: false)
+            }
             Button {
                 Task { await signIn() }
             } label: {

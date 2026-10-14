@@ -34,6 +34,9 @@ struct AddServerView: View {
                             .submitLabel(.go)
                             .onSubmit { Task { await connect() } }
                     }
+                    if errorMessage == nil, AddressKind.isUnencryptedInternet(address.trimmingCharacters(in: .whitespaces)) {
+                        UnencryptedWarning(compact: false)
+                    }
                     if let errorMessage {
                         Label(errorMessage, systemImage: "exclamationmark.circle.fill")
                             .font(.system(size: 13, weight: .semibold))
