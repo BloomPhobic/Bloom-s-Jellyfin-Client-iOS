@@ -16,3 +16,6 @@ xcuserdata/
 .build/
 
 .DS_Store
+
+# App Store screenshots (real library artwork; uploaded to App Store Connect, not kept in git)
+screenshots/
