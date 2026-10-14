@@ -26,6 +26,8 @@ targets:
     sources:
       - path: Sources
       - path: Support/Assets.xcassets
+      - path: Support/Licenses
+        buildPhase: resources
     dependencies:
       - package: JellyfinAPI
       - package: MPVKit

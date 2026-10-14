@@ -28,6 +28,19 @@ open JellyfinClient.xcodeproj
 
 Server addresses and credentials are entered in the app at runtime. Nothing server-specific is stored in this repository.
 
+## Using your own mpv or FFmpeg
+
+Video playback uses [MPVKit](https://github.com/mpvkit/MPVKit) 1.0.0, the LGPL build (mpv 0.41.0, FFmpeg n8.1.2), which is linked statically into the app. The LGPL lets you replace these libraries with modified versions. Because the app's full source is in this repository, you can rebuild it against your own copy (on a Mac with Xcode):
+
+1. Clone MPVKit at the tag the app uses: `git clone --branch 1.0.0 https://github.com/mpvkit/MPVKit`.
+2. Make your changes to mpv, FFmpeg or the other libraries in MPVKit's build scripts, then build them: `make build platform=ios`. The libraries end up in `dist/release`.
+3. In MPVKit's `Package.swift`, point each `binaryTarget` at the local file, for example `path: "dist/release/Libmpv.xcframework.zip"` (MPVKit's README shows the full list).
+4. In this repository's `project.yml`, replace the MPVKit package's `url` and `exactVersion` with `path: ../MPVKit` (the folder you cloned).
+5. Run `xcodegen generate`, then build the app in Xcode.
+6. Install the result on your device with your own Apple ID, SideStore or LiveContainer. You can also fork this repository and let its GitHub Actions workflow build an unsigned `.ipa` for you.
+
+The app's own licence (MPL 2.0) and the licence of every library it includes are listed in the app under Settings → About → Open-source licences.
+
 ## Privacy
 
 The app talks only to the Jellyfin servers you add, and collects nothing. See the [privacy policy](https://bloomphobic.github.io/Bloom-s-Jellyfin-Client-iOS/privacy.html).
