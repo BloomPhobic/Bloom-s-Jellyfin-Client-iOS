@@ -2,16 +2,18 @@
 
 A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in SwiftUI. Media is direct-played through mpv, so the server never has to transcode.
 
-**Status:** early development. Working so far:
+**Status:** in daily use by the developer, preparing for the App Store. Features:
 
 - Direct play through mpv (hardware decoding, HDR10 passthrough, ASS/PGS subtitles, audio and subtitle track selection)
+- A full player: auto-hiding controls, skip intro and credits, play next episode automatically, an episode list and subtitle options inside the player, and watch progress synced to the server
 - Servers with several addresses (for example local network, Tailscale and a public domain): all are checked at the same time and the highest-priority one that answers is used, and they are checked again when the network changes
-- Sign in with the server's user list, a username and password, or Quick Connect; the sign-in is kept in the Keychain
-- Home screen with Continue watching, Next up, Recently added per library, and library shortcuts
+- Several accounts; sign in with the server's user list, a username and password, or Quick Connect; the sign-in is kept in the Keychain
+- Home screen with Continue watching, Next up, Recently added per library, watch history and library shortcuts
 - Library grids with sort and filters, show pages with seasons and episodes, search, and watched and favourite toggles
+- Downloads: original files only (never transcoded), downloaded in the background, Wi-Fi only unless mobile data is allowed, played offline in the same player, with offline progress synced when the connection returns
 - Accent colour setting
 
-Next up: the full player (controls, subtitle options, skip intro, autoplay, and syncing progress to the server).
+Planned: an iPad layout, and picture in picture.
 
 ## Install a development build
 
