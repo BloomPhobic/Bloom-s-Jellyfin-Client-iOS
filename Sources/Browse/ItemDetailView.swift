@@ -115,20 +115,7 @@ struct ItemDetailView: View {
                         .padding(.top, 4)
                 }
 
-                if let genres = item.genres, !genres.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(genres, id: \.self) { genre in
-                                Text(genre)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.text2)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(Capsule().fill(Theme.raised))
-                            }
-                        }
-                    }
-                }
+                GenreLinks(item: item, api: api)
 
                 if isEpisode, let seriesID = item.seriesID {
                     Button {
@@ -480,9 +467,58 @@ struct UserDataTiles: View {
 }
 
 /// Text that shows a few lines, with "More" to expand.
+/// An item's genres as chips. Each opens the item's library showing only that genre.
+struct GenreLinks: View {
+    let item: BaseItemDto
+    let api: LibraryAPI
+
+    @State private var library: BaseItemDto?
+
+    var body: some View {
+        if let genres = item.genres, !genres.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(genres, id: \.self) { genre in
+                        if let library {
+                            NavigationLink(value: BrowseRoute.genre(library: library, genre: genre)) {
+                                chip(genre, linked: true)
+                            }
+                            .buttonStyle(PressableStyle())
+                            .accessibilityHint("Shows \(genre) in \(library.name ?? "the library")")
+                        } else {
+                            chip(genre, linked: false)
+                        }
+                    }
+                }
+            }
+            .task(id: item.id) {
+                guard library == nil, let id = item.id else { return }
+                library = try? await api.library(containing: id)
+            }
+        }
+    }
+
+    private func chip(_ genre: String, linked: Bool) -> some View {
+        Text(genre)
+            .font(.system(size: 12, weight: linked ? .semibold : .regular))
+            .foregroundStyle(linked ? Theme.text : Theme.text2)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Theme.raised))
+            .overlay(Capsule().strokeBorder(linked ? Theme.accent.opacity(0.5) : .clear, lineWidth: 1))
+    }
+}
+
 struct ExpandableText: View {
-    let text: String
+    private let text: AttributedString
+    private let length: Int
     @State private var isExpanded = false
+
+    /// Descriptions from metadata providers can contain simple HTML (<i>, <br> and so on).
+    init(text: String) {
+        self.text = OverviewText.attributed(text)
+        length = self.text.characters.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -491,7 +527,7 @@ struct ExpandableText: View {
                 .lineSpacing(3)
                 .foregroundStyle(Theme.text.opacity(0.85))
                 .lineLimit(isExpanded ? nil : 4)
-            if text.count > 200 {
+            if length > 200 {
                 Button(isExpanded ? "Less" : "More") {
                     withAnimation(.easeInOut(duration: 0.25)) { isExpanded.toggle() }
                 }
@@ -500,6 +536,117 @@ struct ExpandableText: View {
                 .foregroundStyle(Theme.accent)
             }
         }
+    }
+}
+
+/// Turns the simple HTML some descriptions contain into styled text: line breaks and paragraphs,
+/// italic and bold. Other tags are dropped and entities like &amp; decoded.
+enum OverviewText {
+    static func attributed(_ raw: String) -> AttributedString {
+        guard raw.contains("<") || raw.contains("&") else { return AttributedString(raw) }
+        var source = raw
+        // With HTML line breaks present, the source's own line breaks are just formatting.
+        if source.range(of: "<(br|p)\\b", options: [.regularExpression, .caseInsensitive]) != nil {
+            source = source.replacingOccurrences(of: "\\s*\\n\\s*", with: " ", options: .regularExpression)
+        }
+        var result = AttributedString()
+        var italic = 0
+        var bold = 0
+        var rest = Substring(source)
+        while let open = rest.firstIndex(of: "<") {
+            append(String(rest[..<open]), italic: italic > 0, bold: bold > 0, to: &result)
+            guard let close = rest[open...].firstIndex(of: ">") else {
+                rest = rest[open...]
+                break
+            }
+            let tag = rest[rest.index(after: open)..<close].lowercased().trimmingCharacters(in: .whitespaces)
+            let closing = tag.hasPrefix("/")
+            let name = tag.drop { $0 == "/" }.prefix { $0.isLetter }
+            switch name {
+            case "br":
+                result.append(AttributedString("\n"))
+            case "p", "div":
+                result.append(AttributedString("\n\n"))
+            case "i", "em":
+                italic = max(0, italic + (closing ? -1 : 1))
+            case "b", "strong":
+                bold = max(0, bold + (closing ? -1 : 1))
+            default:
+                break
+            }
+            rest = rest[rest.index(after: close)...]
+        }
+        append(String(rest), italic: italic > 0, bold: bold > 0, to: &result)
+        return tidy(result)
+    }
+
+    private static func append(_ text: String, italic: Bool, bold: Bool, to result: inout AttributedString) {
+        guard !text.isEmpty else { return }
+        var piece = AttributedString(decodeEntities(text))
+        var intent: InlinePresentationIntent = []
+        if italic { intent.insert(.emphasized) }
+        if bold { intent.insert(.stronglyEmphasized) }
+        if !intent.isEmpty {
+            piece.inlinePresentationIntent = intent
+        }
+        result.append(piece)
+    }
+
+    /// At most one empty line between paragraphs, no spaces around line breaks, nothing at the ends.
+    private static func tidy(_ text: AttributedString) -> AttributedString {
+        var text = text
+        for pattern in ["[ \\t]+\\n", "\\n[ \\t]+", "\\n{3,}"] {
+            while let range = String(text.characters).range(of: pattern, options: .regularExpression) {
+                let plain = String(text.characters)
+                let start = plain.distance(from: plain.startIndex, to: range.lowerBound)
+                let end = plain.distance(from: plain.startIndex, to: range.upperBound)
+                let lower = text.characters.index(text.startIndex, offsetBy: start)
+                let upper = text.characters.index(text.startIndex, offsetBy: end)
+                let replacement = pattern == "\\n{3,}" ? "\n\n" : "\n"
+                text.replaceSubrange(lower..<upper, with: AttributedString(replacement))
+            }
+        }
+        while let first = text.characters.first, first.isWhitespace {
+            text.removeSubrange(text.startIndex..<text.characters.index(after: text.startIndex))
+        }
+        while let last = text.characters.last, last.isWhitespace {
+            text.removeSubrange(text.characters.index(before: text.endIndex)..<text.endIndex)
+        }
+        return text
+    }
+
+    private static let entities: [String: String] = [
+        "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ",
+        "mdash": "—", "ndash": "–", "hellip": "…", "rsquo": "’", "lsquo": "‘", "rdquo": "”", "ldquo": "“",
+    ]
+
+    private static func decodeEntities(_ text: String) -> String {
+        guard text.contains("&") else { return text }
+        var output = ""
+        var rest = Substring(text)
+        while let amp = rest.firstIndex(of: "&") {
+            output += rest[..<amp]
+            let afterAmp = rest.index(after: amp)
+            if let semi = rest[afterAmp...].prefix(10).firstIndex(of: ";") {
+                let name = String(rest[afterAmp..<semi])
+                var decoded: String?
+                if name.hasPrefix("#x") || name.hasPrefix("#X") {
+                    decoded = UInt32(name.dropFirst(2), radix: 16).flatMap(Unicode.Scalar.init).map { String($0) }
+                } else if name.hasPrefix("#") {
+                    decoded = UInt32(name.dropFirst()).flatMap(Unicode.Scalar.init).map { String($0) }
+                } else {
+                    decoded = entities[name.lowercased()]
+                }
+                if let decoded {
+                    output += decoded
+                    rest = rest[rest.index(after: semi)...]
+                    continue
+                }
+            }
+            output += "&"
+            rest = rest[afterAmp...]
+        }
+        return output + rest
     }
 }
 

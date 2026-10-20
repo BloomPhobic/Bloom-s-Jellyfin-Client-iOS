@@ -5,6 +5,8 @@ import SwiftUI
 enum BrowseRoute: Hashable {
     case item(BaseItemDto)
     case library(BaseItemDto)
+    /// A library showing only one genre (from the genre links on a movie or show page).
+    case genre(library: BaseItemDto, genre: String)
     case collection(HomeCollection)
 }
 
@@ -41,6 +43,8 @@ struct BrowseDestination: View {
         switch route {
         case .library(let library):
             LibraryView(api: api, parent: library)
+        case .genre(let library, let genre):
+            LibraryView(api: api, parent: library, genre: genre)
         case .collection(let collection):
             CollectionView(api: api, collection: collection)
         case .item(let item):

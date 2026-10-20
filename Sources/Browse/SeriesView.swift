@@ -162,6 +162,7 @@ struct SeriesView: View {
                 if let overview = series.overview, !overview.isEmpty {
                     ExpandableText(text: overview)
                 }
+                GenreLinks(item: series, api: api)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)

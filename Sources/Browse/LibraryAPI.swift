@@ -84,7 +84,7 @@ struct LibraryAPI {
     // MARK: - Libraries and search
 
     /// One page of a library, collection or folder. Returns the items and the total count.
-    func items(in parent: BaseItemDto, query: LibraryQuery, searchTerm: String? = nil, startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
+    func items(in parent: BaseItemDto, query: LibraryQuery, searchTerm: String? = nil, genre: String? = nil, startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
         var parameters = Paths.GetItemsParameters()
         if let searchTerm, !searchTerm.isEmpty {
             parameters.searchTerm = searchTerm
@@ -118,17 +118,38 @@ struct LibraryAPI {
         if query.favouritesOnly {
             parameters.isFavorite = true
         }
+        if let genre {
+            parameters.genres = [genre]
+        }
         let result = try await client.send(Paths.getItems(parameters: parameters)).value
         return (result.items ?? [], result.totalRecordCount ?? 0)
     }
 
+    /// The library (as listed on Home) that an item is in, for opening it filtered by a genre.
+    func library(containing itemID: String) async throws -> BaseItemDto? {
+        async let all = libraries()
+        async let ancestors = client.send(Paths.getAncestors(itemID: itemID, userID: userID)).value
+        let ancestorIDs = Set(try await ancestors.compactMap(\.id))
+        return try await all.first { $0.id.map(ancestorIDs.contains) ?? false }
+    }
+
+    /// Shows first, then movies, then episodes. Asked for separately, so a lot of matching episode
+    /// titles can't push a show out of the results.
     func search(_ term: String) async throws -> [BaseItemDto] {
+        async let titles = search(term, types: [.series, .movie], limit: 40)
+        async let episodes = search(term, types: [.episode], limit: 30)
+        let shows = try await titles
+        let ordered = shows.filter { $0.type == .series } + shows.filter { $0.type != .series }
+        return try await ordered + episodes
+    }
+
+    private func search(_ term: String, types: [BaseItemKind], limit: Int) async throws -> [BaseItemDto] {
         var parameters = Paths.GetItemsParameters()
         parameters.userID = userID
         parameters.searchTerm = term
         parameters.isRecursive = true
-        parameters.includeItemTypes = [.movie, .series, .episode]
-        parameters.limit = 60
+        parameters.includeItemTypes = types
+        parameters.limit = limit
         parameters.fields = Self.listFields
         parameters.enableUserData = true
         return try await client.send(Paths.getItems(parameters: parameters)).value.items ?? []

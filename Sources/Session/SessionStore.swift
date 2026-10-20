@@ -348,7 +348,16 @@ final class SessionStore {
             return ("That address is already in the list.", true)
         }
 
+        // Only addresses that answer as this Jellyfin server are saved, so a typo can't slip in.
         let result = await ServerProbe.probe(address)
+        if case .failed(let reason) = result.outcome {
+            AppLog.shared.log("Rejected \(address): \(reason)", level: .warning)
+            var message = "Not added: no Jellyfin server answered at that address (\(reason))."
+            if AddressKind.of(address) != .internet {
+                message += " Add a home network or Tailscale address while you're connected to that network."
+            }
+            return (message, true)
+        }
         if let foundID = result.serverID, let id = record.id, foundID != id {
             AppLog.shared.log("Rejected \(address): a different server (\(result.serverName ?? "?"))", level: .warning)
             return ("That address leads to a different Jellyfin server (\"\(result.serverName ?? "?")\").", true)
@@ -360,10 +369,6 @@ final class SessionStore {
         results[address] = result
         AppLog.shared.log("Added address \(address) (\(AddressKind.of(address).label))")
         Task { await resolve() }
-
-        if case .failed(let reason) = result.outcome {
-            return ("Saved, but it didn't answer just now: \(reason)", false)
-        }
         return ("Added as \(AddressKind.of(address).label).", false)
     }
 

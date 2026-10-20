@@ -17,6 +17,12 @@ struct PlayerView: View {
     /// When the viewer last touched the controls; they fade out a few seconds after that.
     @State private var lastInteraction = Date()
     @State private var offlineSince: Date?
+    /// Touch tracking for tap (show/hide controls) and press-and-hold on the sides (faster playback).
+    @GestureState private var isTouching = false
+    @State private var touchStarted = false
+    @State private var touchMoved = false
+    @State private var didHold = false
+    @State private var holdTimer: Task<Void, Never>?
 
     private var player: MPVPlayer { session.player }
 
@@ -25,14 +31,7 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
             MPVVideoView(player: player, url: session.initialURL, startSeconds: session.initialStart)
                 .ignoresSafeArea()
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showControls.toggle()
-                    }
-                    lastInteraction = .now
-                }
+            touchLayer
             if session.isRecovering || (player.errorMessage != nil && !session.showsError) {
                 VStack(spacing: 10) {
                     ProgressView()
@@ -56,6 +55,9 @@ struct PlayerView: View {
                 .opacity(showControls ? 1 : 0)
                 .allowsHitTesting(showControls)
                 .accessibilityHidden(!showControls)
+            if player.isHoldingSpeed {
+                holdSpeedBadge
+            }
             // Skip and next-episode stay visible even when the controls are hidden.
             cornerActions
             connectionPill
@@ -99,6 +101,16 @@ struct PlayerView: View {
         .onChange(of: connectionDown, initial: true) { _, down in
             offlineSince = down ? .now : nil
         }
+        .onChange(of: isTouching) { _, touching in
+            // Also runs when iOS cancels the touch, so the speed never stays stuck.
+            if !touching {
+                holdTimer?.cancel()
+                holdTimer = nil
+                touchStarted = false
+                player.endHoldSpeed()
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: player.isHoldingSpeed)
         .onChange(of: scrubPosition) { lastInteraction = .now }
         .onChange(of: panel) { lastInteraction = .now }
         .onChange(of: player.isPaused) { lastInteraction = .now }
@@ -109,6 +121,80 @@ struct PlayerView: View {
             session.close()
             OrientationLock.set(.allButUpsideDown, rotateTo: .portrait)
         }
+    }
+
+    /// Tap anywhere to show or hide the controls. Press and hold the left or right third of the
+    /// screen to play at the hold speed (2× unless changed) until you let go.
+    private var touchLayer: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isTouching) { _, touching, _ in touching = true }
+                        .onChanged { value in
+                            if !touchStarted {
+                                touchStarted = true
+                                touchMoved = false
+                                didHold = false
+                                let side = proxy.size.width / 3
+                                let x = value.startLocation.x
+                                if x < side || x > proxy.size.width - side {
+                                    holdTimer = Task {
+                                        try? await Task.sleep(for: .milliseconds(350))
+                                        guard !Task.isCancelled else { return }
+                                        beginHold()
+                                    }
+                                }
+                            }
+                            if hypot(value.translation.width, value.translation.height) > 20 {
+                                touchMoved = true
+                                holdTimer?.cancel()
+                            }
+                        }
+                        .onEnded { _ in
+                            holdTimer?.cancel()
+                            holdTimer = nil
+                            touchStarted = false
+                            player.endHoldSpeed()
+                            if !didHold && !touchMoved {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showControls.toggle()
+                                }
+                                lastInteraction = .now
+                            }
+                        }
+                )
+        }
+        .ignoresSafeArea()
+    }
+
+    private func beginHold() {
+        guard !player.isPaused, panel == nil else { return }
+        didHold = true
+        player.beginHoldSpeed()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showControls = false
+        }
+    }
+
+    /// Top centre while the side of the screen is held: "2× ▸▸".
+    private var holdSpeedBadge: some View {
+        HStack(spacing: 6) {
+            Text(PlayerSettings.label(PlayerSettings.holdSpeed))
+            Image(systemName: "forward.fill")
+        }
+        .font(.system(size: 14, weight: .bold))
+        .foregroundStyle(Theme.text)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Capsule().fill(Theme.background.opacity(0.8)))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 16)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+        .allowsHitTesting(false)
+        .accessibilityLabel("Playing at \(PlayerSettings.label(PlayerSettings.holdSpeed))")
     }
 
     /// Hides the controls 4 s after the last touch, while playing. They stay up while paused,
@@ -158,6 +244,20 @@ struct PlayerView: View {
                         .buttonStyle(CircleButtonStyle(fill: panel == .episodes ? Theme.accent.opacity(0.35) : Theme.scrim))
                         .accessibilityLabel("Episodes")
                     }
+                    Button {
+                        toggle(.speed)
+                    } label: {
+                        if player.speed == 1 {
+                            Image(systemName: "gauge.with.dots.needle.67percent")
+                                .font(.system(size: 16, weight: .semibold))
+                        } else {
+                            Text(PlayerSettings.label(player.speed))
+                                .font(.system(size: 13, weight: .bold))
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+                    .buttonStyle(CircleButtonStyle(fill: panel == .speed ? Theme.accent.opacity(0.35) : Theme.scrim))
+                    .accessibilityLabel("Playback speed, \(PlayerSettings.label(player.speed))")
                     AudioTrackMenu(player: player)
                     SubtitleTrackMenu(player: player)
                     Button {
@@ -309,6 +409,10 @@ struct PlayerView: View {
         case .subtitles:
             SubtitleOptionsView(player: player) {
                 toggle(.subtitles)
+            }
+        case .speed:
+            SpeedOptionsView(player: player) {
+                toggle(.speed)
             }
         }
     }
@@ -612,6 +716,70 @@ private struct NextEpisodeCard: View {
 private enum PlayerPanel {
     case episodes
     case subtitles
+    case speed
+}
+
+/// Playback speed (for this player) and the speed used while holding the side of the screen
+/// (remembered).
+private struct SpeedOptionsView: View {
+    let player: MPVPlayer
+    let close: () -> Void
+
+    @AppStorage(PlayerSettings.holdSpeedKey) private var holdSpeed = 2.0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PanelHeader(title: "Speed", close: close) { EmptyView() }
+            Form {
+                Section {
+                    SpeedChoices(choices: PlayerSettings.speedChoices, selected: player.speed) { speed in
+                        player.setSpeed(speed)
+                    }
+                } header: {
+                    Text("Playback speed")
+                } footer: {
+                    Text("Goes back to 1× when you close the player.")
+                }
+                Section {
+                    SpeedChoices(choices: PlayerSettings.holdSpeedChoices, selected: holdSpeed) { speed in
+                        holdSpeed = speed
+                    }
+                } header: {
+                    Text("Hold speed")
+                } footer: {
+                    Text("Press and hold the left or right side of the screen to play at this speed. Let go to go back.")
+                }
+            }
+            .scrollContentBackground(.hidden)
+        }
+    }
+}
+
+/// A row of speed buttons, the selected one filled with the accent.
+private struct SpeedChoices: View {
+    let choices: [Double]
+    let selected: Double
+    let pick: (Double) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+            ForEach(choices, id: \.self) { speed in
+                let isSelected = speed == selected
+                Button {
+                    pick(speed)
+                } label: {
+                    Text(PlayerSettings.label(speed))
+                        .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .foregroundStyle(isSelected ? Theme.onAccent : Theme.text)
+                        .background(Capsule().fill(isSelected ? Theme.accent : Theme.raised2))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 4)
+    }
 }
 
 /// Title row for a player panel, with a close button.

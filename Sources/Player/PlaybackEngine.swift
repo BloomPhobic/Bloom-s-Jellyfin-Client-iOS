@@ -46,6 +46,21 @@ enum PlayerSettings {
         UserDefaults.standard.object(forKey: hardwareDecodingKey) as? Bool ?? true
     }
 
+    static let holdSpeedKey = "player.holdSpeed"
+    static let speedChoices: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+    static let holdSpeedChoices: [Double] = [1.5, 2, 2.5, 3]
+
+    /// The speed while the edge of the screen is held down.
+    static var holdSpeed: Double {
+        UserDefaults.standard.object(forKey: holdSpeedKey) as? Double ?? 2
+    }
+
+    /// "1×", "1.25×", "0.5×".
+    static func label(_ speed: Double) -> String {
+        let text = speed == speed.rounded() ? String(Int(speed)) : String(format: "%g", speed)
+        return text + "×"
+    }
+
     static let autoplayNextKey = "player.autoplayNext"
 
     /// Count down and play the next episode automatically; when off, the card waits for a tap.

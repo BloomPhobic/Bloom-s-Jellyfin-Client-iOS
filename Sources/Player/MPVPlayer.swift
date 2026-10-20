@@ -18,6 +18,10 @@ final class MPVPlayer: PlaybackEngine {
     /// Seconds of video downloaded ahead of the playback position.
     private(set) var bufferedSeconds: Double = 0
     private(set) var subtitleDelay: Double = 0
+    /// The chosen playback speed. Kept for the next episode in the same player.
+    private(set) var speed: Double = 1
+    /// The edge of the screen is held down, so playback runs at the hold speed for now.
+    private(set) var isHoldingSpeed = false
 
     let layer = MPVMetalLayer()
     @ObservationIgnored private var core: MPVCore?
@@ -123,6 +127,28 @@ final class MPVPlayer: PlaybackEngine {
         let rounded = (seconds * 10).rounded() / 10
         core.setString("sub-delay", String(rounded))
         subtitleDelay = rounded
+    }
+
+    // MARK: - Speed
+
+    func setSpeed(_ value: Double) {
+        speed = value
+        if !isHoldingSpeed {
+            core?.setString("speed", String(value))
+        }
+    }
+
+    /// Plays at the hold speed until `endHoldSpeed`, then goes back to the chosen speed.
+    func beginHoldSpeed() {
+        guard let core, !isHoldingSpeed, !isPaused else { return }
+        isHoldingSpeed = true
+        core.setString("speed", String(PlayerSettings.holdSpeed))
+    }
+
+    func endHoldSpeed() {
+        guard isHoldingSpeed else { return }
+        isHoldingSpeed = false
+        core?.setString("speed", String(speed))
     }
 
     // MARK: - Controls

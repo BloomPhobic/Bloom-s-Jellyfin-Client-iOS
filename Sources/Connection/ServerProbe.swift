@@ -17,8 +17,9 @@ struct ProbeResult: Sendable {
 
 /// Checks whether Jellyfin servers answer, using the unauthenticated /System/Info/Public endpoint.
 enum ServerProbe {
+    /// Every Jellyfin server sends its ID here, so a page without one isn't a Jellyfin server.
     private struct PublicInfo: Decodable {
-        let id: String?
+        let id: String
         let serverName: String?
         let version: String?
 
@@ -86,6 +87,9 @@ enum ServerProbe {
                 return ProbeResult(address: address, outcome: .failed("HTTP \(http.statusCode)"))
             }
             let info = try JSONDecoder().decode(PublicInfo.self, from: data)
+            guard !info.id.isEmpty else {
+                return ProbeResult(address: address, outcome: .failed("Answered, but not with Jellyfin server info"))
+            }
             return ProbeResult(
                 address: address,
                 outcome: .reachable(

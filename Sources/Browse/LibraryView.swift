@@ -7,6 +7,8 @@ struct LibraryView: View {
     let parent: BaseItemDto
 
     @State private var query: LibraryQuery
+    /// Only this genre, when opened from a genre link. Not saved with the library's other options.
+    @State private var genre: String?
     @State private var items: [BaseItemDto] = []
     @State private var total = 0
     @State private var isLoading = false
@@ -20,10 +22,11 @@ struct LibraryView: View {
     private static let pageSize = 100
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3)
 
-    init(api: LibraryAPI, parent: BaseItemDto) {
+    init(api: LibraryAPI, parent: BaseItemDto, genre: String? = nil) {
         self.api = api
         self.parent = parent
         _query = State(initialValue: LibraryQuery.load(for: parent.id))
+        _genre = State(initialValue: genre)
     }
 
     var body: some View {
@@ -36,7 +39,7 @@ struct LibraryView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 4)
             }
-            if query != LibraryQuery() {
+            if query != LibraryQuery() || genre != nil {
                 activeOptions
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -68,7 +71,7 @@ struct LibraryView: View {
                 ContentUnavailableView(
                     errorMessage == nil ? "Nothing here" : "Couldn't load",
                     systemImage: errorMessage == nil ? "film.stack" : "exclamationmark.triangle",
-                    description: Text(errorMessage ?? (!searchTerm.isEmpty ? "Nothing matches \"\(searchTerm)\"." : query.unplayedOnly || query.favouritesOnly ? "Try turning off the filters." : ""))
+                    description: Text(errorMessage ?? (!searchTerm.isEmpty ? "Nothing matches \"\(searchTerm)\"." : query.unplayedOnly || query.favouritesOnly || genre != nil ? "Try turning off the filters." : ""))
                 )
             }
         }
@@ -77,6 +80,7 @@ struct LibraryView: View {
             Task { await reload() }
         }
         .animation(.easeInOut(duration: 0.25), value: query)
+        .animation(.easeInOut(duration: 0.25), value: genre)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(parent.name ?? "Library")
         .navigationBarTitleDisplayMode(.large)
@@ -91,9 +95,9 @@ struct LibraryView: View {
             guard !Task.isCancelled else { return }
             searchTerm = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        .task(id: LoadKey(query: query, search: searchTerm)) {
+        .task(id: LoadKey(query: query, search: searchTerm, genre: genre)) {
             // .task also runs when coming back from a pushed page; keep the grid (and scroll position) then.
-            let key = LoadKey(query: query, search: searchTerm)
+            let key = LoadKey(query: query, search: searchTerm, genre: genre)
             guard key != loadedKey else { return }
             loadedKey = key
             query.save(for: parent.id)
@@ -104,6 +108,7 @@ struct LibraryView: View {
     private struct LoadKey: Hashable {
         let query: LibraryQuery
         let search: String
+        let genre: String?
     }
 
     private var countText: String {
@@ -113,13 +118,17 @@ struct LibraryView: View {
         case .tvshows: noun = total == 1 ? "show" : "shows"
         default: noun = total == 1 ? "item" : "items"
         }
-        return searchTerm.isEmpty ? "\(total) \(noun)" : "\(total) \(noun) matching \"\(searchTerm)\""
+        let count = genre.map { "\(total) \($0) \(noun)" } ?? "\(total) \(noun)"
+        return searchTerm.isEmpty ? count : "\(count) matching \"\(searchTerm)\""
     }
 
     /// Chips for every non-default option, each removable, plus Reset. Shown above the grid.
     private var activeOptions: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if let genre {
+                    OptionChip(title: genre) { self.genre = nil }
+                }
                 if query.sort != .name || !query.ascending {
                     OptionChip(title: "\(query.sort.label) \(query.ascending ? "↑" : "↓")") {
                         query.sort = .name
@@ -134,6 +143,7 @@ struct LibraryView: View {
                 }
                 Button("Reset") {
                     query = LibraryQuery()
+                    genre = nil
                 }
                 .font(.subheadline.weight(.semibold))
                 .padding(.leading, 4)
@@ -185,7 +195,7 @@ struct LibraryView: View {
         isLoading = true
         errorMessage = nil
         do {
-            let page = try await api.items(in: parent, query: query, searchTerm: searchTerm, startIndex: 0, limit: Self.pageSize)
+            let page = try await api.items(in: parent, query: query, searchTerm: searchTerm, genre: genre, startIndex: 0, limit: Self.pageSize)
             guard id == loadID else { return }
             items = page.items
             total = page.total
@@ -201,7 +211,7 @@ struct LibraryView: View {
         let id = loadID
         isLoading = true
         do {
-            let page = try await api.items(in: parent, query: query, searchTerm: searchTerm, startIndex: items.count, limit: Self.pageSize)
+            let page = try await api.items(in: parent, query: query, searchTerm: searchTerm, genre: genre, startIndex: items.count, limit: Self.pageSize)
             guard id == loadID else { return }
             items += page.items
             total = page.total
