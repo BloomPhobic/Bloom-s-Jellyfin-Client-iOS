@@ -20,6 +20,14 @@ struct PlaybackSegment: Equatable {
     }
 }
 
+/// A chapter mark in a film or episode.
+struct PlaybackChapter: Equatable {
+    let index: Int
+    let name: String
+    let start: Double
+    let imageTag: String?
+}
+
 /// Everything about what the player is playing: the current item, its server reporting,
 /// skip markers, the next episode and the season's episode list. Switching episodes reuses
 /// the same player, so a binge never leaves the player screen.
@@ -34,6 +42,11 @@ final class PlaybackSession: Identifiable {
     private(set) var segments: [PlaybackSegment] = []
     private(set) var nextEpisode: BaseItemDto?
     private(set) var seasonEpisodes: [BaseItemDto] = []
+    private(set) var chapters: [PlaybackChapter] = []
+    /// Preview pictures for scrubbing, if the server made them for this video.
+    private(set) var thumbnails: TrickplayThumbnails?
+    @ObservationIgnored private var thumbnailLoader: Task<Void, Never>?
+    @ObservationIgnored private let nowPlaying = NowPlaying()
     /// The user cancelled the next-episode card for the current item.
     var nextCardDismissed = false
     /// When the next-episode countdown ends; nil when no countdown is running.
@@ -125,6 +138,7 @@ final class PlaybackSession: Identifiable {
     /// Loads the skip markers, the next episode and the season list for the current item.
     func loadExtras() async {
         guard let itemID = item.id else { return }
+        loadChapters()
         if isOffline {
             loadOfflineExtras()
             return
@@ -181,10 +195,46 @@ final class PlaybackSession: Identifiable {
         }
     }
 
+    /// Chapters come with the item (also for downloads). Preview pictures need the server.
+    private func loadChapters() {
+        chapters = (item.chapters ?? []).enumerated().compactMap { index, chapter in
+            guard let ticks = chapter.startPositionTicks else { return nil }
+            let name = chapter.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Chapter \(index + 1)"
+            return PlaybackChapter(index: index, name: name, start: Double(ticks) / 10_000_000, imageTag: chapter.imageTag)
+        }
+        .sorted { $0.start < $1.start }
+        thumbnailLoader?.cancel()
+        thumbnails = isOffline ? nil : TrickplayThumbnails(item: item, mediaSourceID: mediaSourceID, client: api.client)
+        if let thumbnails {
+            thumbnailLoader = Task { await thumbnails.preload() }
+        }
+        AppLog.shared.log("Chapters: \(chapters.count); preview thumbnails: \(thumbnails == nil ? "none" : "yes")")
+    }
+
+    /// The chapter playing at a moment in the video.
+    func chapter(at seconds: Double) -> PlaybackChapter? {
+        chapters.last { $0.start <= seconds + 0.5 }
+    }
+
+    /// A chapter's picture from the server, if it has made one.
+    func chapterImageURL(_ chapter: PlaybackChapter) -> URL? {
+        guard !isOffline, let tag = chapter.imageTag, let itemID = item.id else { return nil }
+        var parameters = Paths.GetItemImageByIndexParameters()
+        parameters.maxWidth = 400
+        parameters.tag = tag
+        return api.client.url(with: Paths.getItemImageByIndex(itemID: itemID, imageType: "Chapter", imageIndex: chapter.index, parameters: parameters))
+    }
+
     // MARK: - Playback
+
+    /// Called by the player screen when it opens.
+    func begin() {
+        nowPlaying.start(self)
+    }
 
     /// Called every half second by the player screen.
     func tick() {
+        nowPlaying.update()
         if player.errorMessage != nil {
             recoverIfPossible()
             return
@@ -318,6 +368,8 @@ final class PlaybackSession: Identifiable {
         item = full
         mediaSourceID = source.id
         segments = []
+        chapters = []
+        thumbnails = nil
         nextEpisode = nil
         nextCardDismissed = false
         reporter = isOffline ? nil : PlaybackReporter(client: api.client, itemID: episodeID, mediaSourceID: source.id)
@@ -350,6 +402,8 @@ final class PlaybackSession: Identifiable {
     }
 
     func close() {
+        thumbnailLoader?.cancel()
+        nowPlaying.stop()
         reporter?.stop()
         saveDownloadProgress()
         player.stop()

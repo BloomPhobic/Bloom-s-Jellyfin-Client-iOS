@@ -55,6 +55,8 @@ struct BrowseDestination: View {
                 SeriesView(api: api, seriesID: item.seriesID ?? "", initialSeasonID: item.id)
             case .boxSet, .folder, .collectionFolder, .userView:
                 LibraryView(api: api, parent: item)
+            case .person:
+                PersonView(api: api, personID: item.id ?? "")
             default:
                 ItemDetailView(api: api, itemID: item.id ?? "")
             }

@@ -192,6 +192,31 @@ struct LibraryAPI {
         return items[index + 1]
     }
 
+    /// Titles in your library like this one. The server picks them by shared genres, tags,
+    /// studios and people, and closeness in year.
+    func similar(to itemID: String, limit: Int = 16) async throws -> [BaseItemDto] {
+        var parameters = Paths.GetSimilarItemsParameters()
+        parameters.userID = userID
+        parameters.limit = limit
+        parameters.fields = Self.listFields
+        return try await client.send(Paths.getSimilarItems(itemID: itemID, parameters: parameters)).value.items ?? []
+    }
+
+    /// Movies and shows a person is in, newest first.
+    func titles(withPerson personID: String) async throws -> [BaseItemDto] {
+        var parameters = Paths.GetItemsParameters()
+        parameters.userID = userID
+        parameters.personIDs = [personID]
+        parameters.isRecursive = true
+        parameters.includeItemTypes = [.movie, .series]
+        parameters.sortBy = [.premiereDate, .sortName]
+        parameters.sortOrder = [.descending]
+        parameters.limit = 200
+        parameters.fields = Self.listFields
+        parameters.enableUserData = true
+        return try await client.send(Paths.getItems(parameters: parameters)).value.items ?? []
+    }
+
     /// Intro, recap, preview and credits markers, if the server has them.
     func segments(itemID: String) async throws -> [MediaSegmentDto] {
         try await client.send(Paths.getItemSegments(itemID: itemID)).value.items ?? []

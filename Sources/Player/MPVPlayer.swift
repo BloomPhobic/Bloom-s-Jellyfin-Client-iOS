@@ -22,6 +22,8 @@ final class MPVPlayer: PlaybackEngine {
     private(set) var speed: Double = 1
     /// The edge of the screen is held down, so playback runs at the hold speed for now.
     private(set) var isHoldingSpeed = false
+    /// The picture is cropped to fill the screen (no black bars). Remembered for next time.
+    private(set) var isZoomed = PlayerSettings.zoomToFill
 
     let layer = MPVMetalLayer()
     @ObservationIgnored private var core: MPVCore?
@@ -47,6 +49,7 @@ final class MPVPlayer: PlaybackEngine {
             ("demuxer-max-back-bytes", "50MiB"),
             ("subs-fallback", "yes"),
             ("embeddedfonts", "yes"),
+            ("panscan", isZoomed ? "1.0" : "0.0"),
         ]
         if startSeconds > 0 {
             options.append(("start", String(format: "%.3f", startSeconds)))
@@ -151,6 +154,15 @@ final class MPVPlayer: PlaybackEngine {
         core?.setString("speed", String(speed))
     }
 
+    // MARK: - Zoom
+
+    func setZoomed(_ zoomed: Bool) {
+        guard zoomed != isZoomed else { return }
+        isZoomed = zoomed
+        PlayerSettings.zoomToFill = zoomed
+        core?.setString("panscan", zoomed ? "1.0" : "0.0")
+    }
+
     // MARK: - Controls
 
     func togglePause() {
@@ -178,9 +190,10 @@ final class MPVPlayer: PlaybackEngine {
     }
 
     /// Turns video output off while the app is in the background, to avoid a black screen on return.
-    func setVideoEnabled(_ enabled: Bool) {
+    /// Playback pauses unless `keepPlaying` (the sound goes on without the picture).
+    func setVideoEnabled(_ enabled: Bool, keepPlaying: Bool = false) {
         guard let core else { return }
-        if !enabled {
+        if !enabled && !keepPlaying {
             core.setString("pause", "yes")
         }
         core.setString("vid", enabled ? "auto" : "no")

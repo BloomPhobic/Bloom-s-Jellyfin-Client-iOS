@@ -61,6 +61,21 @@ enum PlayerSettings {
         return text + "×"
     }
 
+    static let zoomToFillKey = "player.zoomToFill"
+
+    /// Crop the picture to fill the screen instead of showing black bars. Pinch in the player to change.
+    static var zoomToFill: Bool {
+        get { UserDefaults.standard.bool(forKey: zoomToFillKey) }
+        set { UserDefaults.standard.set(newValue, forKey: zoomToFillKey) }
+    }
+
+    static let backgroundAudioKey = "player.backgroundAudio"
+
+    /// Keep the sound playing when the phone is locked or another app is opened.
+    static var backgroundAudio: Bool {
+        UserDefaults.standard.bool(forKey: backgroundAudioKey)
+    }
+
     static let autoplayNextKey = "player.autoplayNext"
 
     /// Count down and play the next episode automatically; when off, the card waits for a tap.

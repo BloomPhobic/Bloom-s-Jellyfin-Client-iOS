@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage(PlayerSettings.hdrPassthroughKey) private var hdrPassthrough = true
     @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
     @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
+    @AppStorage(PlayerSettings.backgroundAudioKey) private var backgroundAudio = false
     @State private var imageCacheBytes = 0
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
     @AppStorage(DownloadStore.cellularKey) private var downloadOverCellular = false
@@ -48,6 +49,12 @@ struct SettingsView: View {
                     Text("Playback")
                 } footer: {
                     Text("Near the end of an episode, a card shows the next one. With autoplay on, it plays after a 10-second countdown; with it off, it waits for you to tap Play now.")
+                }
+
+                Section {
+                    Toggle("Keep playing when locked", isOn: $backgroundAudio)
+                } footer: {
+                    Text("The sound carries on when you lock the phone or switch apps, and you can pause or skip from the lock screen. When off, playback pauses.")
                 }
 
                 Section {

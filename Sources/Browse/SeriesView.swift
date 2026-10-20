@@ -205,6 +205,12 @@ struct SeriesView: View {
             .transition(.opacity)
             .padding(.horizontal, 16)
             .padding(.top, showsDownloads && !episodes.isEmpty ? 12 : (seasons.count > 1 ? 14 : 22))
+
+            VStack(alignment: .leading, spacing: 24) {
+                CastRow(item: series, api: api)
+                SimilarRow(item: series, api: api)
+            }
+            .padding(.top, 28)
             .padding(.bottom, 24)
         }
     }

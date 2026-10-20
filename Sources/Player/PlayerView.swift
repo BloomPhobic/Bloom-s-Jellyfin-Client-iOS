@@ -23,6 +23,9 @@ struct PlayerView: View {
     @State private var touchMoved = false
     @State private var didHold = false
     @State private var holdTimer: Task<Void, Never>?
+    /// "Zoomed to fill" / "Fit to screen", shown briefly after a pinch.
+    @State private var zoomMessage: String?
+    @State private var zoomMessageTimer: Task<Void, Never>?
 
     private var player: MPVPlayer { session.player }
 
@@ -57,6 +60,8 @@ struct PlayerView: View {
                 .accessibilityHidden(!showControls)
             if player.isHoldingSpeed {
                 holdSpeedBadge
+            } else if let zoomMessage {
+                badge(zoomMessage, systemImage: player.isZoomed ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
             }
             // Skip and next-episode stay visible even when the controls are hidden.
             cornerActions
@@ -70,6 +75,7 @@ struct PlayerView: View {
         .persistentSystemOverlays(.hidden)
         .modifier(AccentTint())
         .task {
+            session.begin()
             await session.loadExtras()
         }
         .task {
@@ -86,7 +92,7 @@ struct PlayerView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
-                player.setVideoEnabled(false)
+                player.setVideoEnabled(false, keepPlaying: PlayerSettings.backgroundAudio)
             case .active:
                 player.setVideoEnabled(true)
             default:
@@ -111,6 +117,7 @@ struct PlayerView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: player.isHoldingSpeed)
+        .animation(.easeInOut(duration: 0.15), value: zoomMessage)
         .onChange(of: scrubPosition) { lastInteraction = .now }
         .onChange(of: panel) { lastInteraction = .now }
         .onChange(of: player.isPaused) { lastInteraction = .now }
@@ -124,7 +131,8 @@ struct PlayerView: View {
     }
 
     /// Tap anywhere to show or hide the controls. Press and hold the left or right third of the
-    /// screen to play at the hold speed (2× unless changed) until you let go.
+    /// screen to play at the hold speed (2× unless changed) until you let go. Pinch out to crop
+    /// the picture to fill the screen, pinch in to see all of it again.
     private var touchLayer: some View {
         GeometryReader { proxy in
             Color.clear
@@ -165,8 +173,35 @@ struct PlayerView: View {
                             }
                         }
                 )
+                .simultaneousGesture(
+                    MagnifyGesture()
+                        .onChanged { _ in
+                            // Two fingers: not a tap and not a hold.
+                            touchMoved = true
+                            holdTimer?.cancel()
+                        }
+                        .onEnded { value in
+                            if value.magnification > 1.08 {
+                                setZoom(true)
+                            } else if value.magnification < 0.92 {
+                                setZoom(false)
+                            }
+                        }
+                )
         }
         .ignoresSafeArea()
+    }
+
+    private func setZoom(_ zoomed: Bool) {
+        player.setZoomed(zoomed)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        zoomMessage = zoomed ? "Zoomed to fill" : "Fit to screen"
+        zoomMessageTimer?.cancel()
+        zoomMessageTimer = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            zoomMessage = nil
+        }
     }
 
     private func beginHold() {
@@ -181,9 +216,15 @@ struct PlayerView: View {
 
     /// Top centre while the side of the screen is held: "2× ▸▸".
     private var holdSpeedBadge: some View {
+        badge(PlayerSettings.label(PlayerSettings.holdSpeed), systemImage: "forward.fill")
+            .accessibilityLabel("Playing at \(PlayerSettings.label(PlayerSettings.holdSpeed))")
+    }
+
+    /// A small message at the top centre of the video.
+    private func badge(_ text: String, systemImage: String) -> some View {
         HStack(spacing: 6) {
-            Text(PlayerSettings.label(PlayerSettings.holdSpeed))
-            Image(systemName: "forward.fill")
+            Text(text)
+            Image(systemName: systemImage)
         }
         .font(.system(size: 14, weight: .bold))
         .foregroundStyle(Theme.text)
@@ -194,7 +235,6 @@ struct PlayerView: View {
         .padding(.top, 16)
         .transition(.opacity.combined(with: .move(edge: .top)))
         .allowsHitTesting(false)
-        .accessibilityLabel("Playing at \(PlayerSettings.label(PlayerSettings.holdSpeed))")
     }
 
     /// Hides the controls 4 s after the last touch, while playing. They stay up while paused,
@@ -234,6 +274,16 @@ struct PlayerView: View {
                 Spacer(minLength: 8)
 
                 HStack(spacing: 8) {
+                    if session.chapters.count > 1 {
+                        Button {
+                            toggle(.chapters)
+                        } label: {
+                            Image(systemName: "list.bullet.rectangle")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .buttonStyle(CircleButtonStyle(fill: panel == .chapters ? Theme.accent.opacity(0.35) : Theme.scrim))
+                        .accessibilityLabel("Chapters")
+                    }
                     if session.isEpisode {
                         Button {
                             toggle(.episodes)
@@ -348,6 +398,7 @@ struct PlayerView: View {
                     position: player.position,
                     duration: player.duration,
                     segments: session.segments,
+                    session: session,
                     scrubPosition: $scrubPosition
                 ) { target in
                     player.seek(to: target)
@@ -413,6 +464,10 @@ struct PlayerView: View {
         case .speed:
             SpeedOptionsView(player: player) {
                 toggle(.speed)
+            }
+        case .chapters:
+            ChapterListView(session: session) {
+                toggle(.chapters)
             }
         }
     }
@@ -592,11 +647,13 @@ struct PlayerView: View {
     }
 }
 
-/// Seek bar with the server's intro/credits segments marked. Drag anywhere on it to scrub.
+/// Seek bar with the server's intro/credits segments and the chapters marked. Drag anywhere on it
+/// to scrub; a preview picture (if the server made them) and the chapter name show above your finger.
 private struct SeekBar: View {
     let position: Double
     let duration: Double
     let segments: [PlaybackSegment]
+    let session: PlaybackSession
     @Binding var scrubPosition: Double?
     let onCommit: (Double) -> Void
 
@@ -624,6 +681,15 @@ private struct SeekBar: View {
                 Capsule()
                     .fill(Theme.accent)
                     .frame(width: width * fraction, height: track)
+                if duration > 0 {
+                    // A small gap in the bar where each chapter starts.
+                    ForEach(session.chapters.filter { $0.start > 1 && $0.start < duration - 1 }, id: \.index) { chapter in
+                        Rectangle()
+                            .fill(Color.black.opacity(0.7))
+                            .frame(width: 2, height: track)
+                            .offset(x: width * CGFloat(chapter.start / duration) - 1)
+                    }
+                }
                 Circle()
                     .fill(Theme.text)
                     .frame(width: knob, height: knob)
@@ -631,6 +697,18 @@ private struct SeekBar: View {
                     .offset(x: width * fraction - knob / 2)
             }
             .frame(maxHeight: .infinity)
+            .overlay(alignment: .bottomLeading) {
+                if let scrubPosition, duration > 0 {
+                    ScrubPreview(session: session, seconds: scrubPosition)
+                        .alignmentGuide(.leading) { preview in
+                            // Centred on the finger, but kept inside the bar's ends.
+                            let centre = width * fraction - preview.width / 2
+                            return -min(max(centre, 0), max(width - preview.width, 0))
+                        }
+                        .alignmentGuide(.bottom) { preview in preview.height + 34 }
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -711,12 +789,121 @@ private struct NextEpisodeCard: View {
     }
 }
 
-/// Subtitle size, style, boldness and timing. Size, style and bold are remembered; the timing
-/// offset is for the current session only.
 private enum PlayerPanel {
     case episodes
     case subtitles
     case speed
+    case chapters
+}
+
+/// Above the finger while scrubbing: the preview picture, the chapter name and the time.
+private struct ScrubPreview: View {
+    let session: PlaybackSession
+    let seconds: Double
+
+    var body: some View {
+        let chapter = session.chapter(at: seconds)
+        VStack(spacing: 4) {
+            if let thumbnails = session.thumbnails {
+                ZStack {
+                    Rectangle().fill(Color.black)
+                    if let image = thumbnails.thumbnail(at: seconds) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                    }
+                }
+                .frame(width: 176, height: 176 / thumbnails.aspectRatio)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.8), lineWidth: 1.5))
+            }
+            if session.chapters.count > 1, let chapter {
+                Text(verbatim: chapter.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: 176)
+            }
+            Text(ItemDetailView.timeText(seconds))
+                .font(.system(size: 13, weight: .bold).monospacedDigit())
+        }
+        .padding(session.thumbnails == nil ? 8 : 4)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.6)))
+        .foregroundStyle(Theme.text)
+    }
+}
+
+/// The chapters of the film or episode; tap one to jump to it.
+private struct ChapterListView: View {
+    let session: PlaybackSession
+    let close: () -> Void
+
+    var body: some View {
+        let current = session.chapter(at: session.player.position)
+        VStack(spacing: 0) {
+            PanelHeader(title: "Chapters", close: close) { EmptyView() }
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(session.chapters, id: \.index) { chapter in
+                        Button {
+                            session.player.seek(to: chapter.start)
+                            close()
+                        } label: {
+                            HStack(spacing: 12) {
+                                ChapterPicture(session: session, chapter: chapter)
+                                    .frame(width: 110)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(verbatim: chapter.name)
+                                        .font(.subheadline.weight(chapter == current ? .bold : .regular))
+                                        .lineLimit(2)
+                                    Text(ItemDetailView.timeText(chapter.start))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if chapter == current {
+                                    Image(systemName: "play.fill")
+                                        .foregroundStyle(Theme.accent)
+                                }
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                        .listRowBackground(Color.clear)
+                        .id(chapter.index)
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .onAppear {
+                    if let current {
+                        proxy.scrollTo(current.index, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A chapter's picture: the preview picture at its start, or the server's chapter image.
+private struct ChapterPicture: View {
+    let session: PlaybackSession
+    let chapter: PlaybackChapter
+
+    var body: some View {
+        if let thumbnails = session.thumbnails {
+            ZStack {
+                Rectangle().fill(Theme.raised2)
+                if let image = thumbnails.thumbnail(at: chapter.start + 1) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        } else {
+            ArtworkFrame(url: session.chapterImageURL(chapter), aspectRatio: 16 / 9, cornerRadius: 8)
+        }
+    }
 }
 
 /// Playback speed (for this player) and the speed used while holding the side of the screen
@@ -808,6 +995,8 @@ private struct PanelHeader<Trailing: View>: View {
     }
 }
 
+/// Subtitle size, style, boldness and timing. Size, style and bold are remembered; the timing
+/// offset is for the current session only.
 private struct SubtitleOptionsView: View {
     let player: MPVPlayer
     let close: () -> Void

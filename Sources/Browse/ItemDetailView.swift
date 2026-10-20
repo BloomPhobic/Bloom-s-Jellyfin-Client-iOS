@@ -125,12 +125,22 @@ struct ItemDetailView: View {
                     }
                     .buttonStyle(PressableStyle())
                 }
-
-                fileDetails(item)
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 24)
+
+            VStack(alignment: .leading, spacing: 24) {
+                CastRow(item: item, api: api)
+                if !isEpisode {
+                    SimilarRow(item: item, api: api)
+                }
+            }
+            .padding(.top, 24)
+
+            fileDetails(item)
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 24)
         }
     }
 
@@ -466,7 +476,6 @@ struct UserDataTiles: View {
     }
 }
 
-/// Text that shows a few lines, with "More" to expand.
 /// An item's genres as chips. Each opens the item's library showing only that genre.
 struct GenreLinks: View {
     let item: BaseItemDto
@@ -509,6 +518,7 @@ struct GenreLinks: View {
     }
 }
 
+/// Text that shows a few lines, with "More" to expand.
 struct ExpandableText: View {
     private let text: AttributedString
     private let length: Int
