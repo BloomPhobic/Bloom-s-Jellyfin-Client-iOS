@@ -85,6 +85,12 @@ struct RootView: View {
             default: break
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: BrowseNavigator.openSeriesNotification)) { note in
+            guard let id = note.userInfo?["id"] as? String else { return }
+            selection = .home
+            homeNavigator.path = []
+            homeNavigator.openSeries(id: id, name: note.userInfo?["name"] as? String)
+        }
         .onChange(of: store.isAddingAccount) {
             // The login screen for another account shows on Home.
             if store.isAddingAccount {

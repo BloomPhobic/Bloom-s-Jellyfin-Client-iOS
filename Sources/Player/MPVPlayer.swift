@@ -24,6 +24,9 @@ final class MPVPlayer: PlaybackEngine {
     private(set) var isHoldingSpeed = false
     /// The picture is cropped to fill the screen (no black bars). Remembered for next time.
     private(set) var isZoomed = PlayerSettings.zoomToFill
+    /// Subtitle files that sit next to the video on the server (or in the download), added to
+    /// the player once the video has loaded.
+    @ObservationIgnored var externalSubtitles: [ExternalSubtitle] = []
 
     let layer = MPVMetalLayer()
     @ObservationIgnored private var core: MPVCore?
@@ -50,6 +53,9 @@ final class MPVPlayer: PlaybackEngine {
             ("subs-fallback", "yes"),
             ("embeddedfonts", "yes"),
             ("panscan", isZoomed ? "1.0" : "0.0"),
+            // mpv otherwise marks its sound as mixable with other apps, and iOS never shows lock
+            // screen or Control Center controls for mixable sound.
+            ("audio-exclusive", "yes"),
         ]
         if startSeconds > 0 {
             options.append(("start", String(format: "%.3f", startSeconds)))
@@ -301,6 +307,7 @@ final class MPVPlayer: PlaybackEngine {
             }
         case .fileLoaded:
             AppLog.shared.log("mpv: file loaded")
+            addExternalSubtitles()
             refreshTracks()
             refreshState()
         case .endFile(let error):
@@ -309,6 +316,18 @@ final class MPVPlayer: PlaybackEngine {
                 AppLog.shared.log("Playback failed: \(error)", level: .error)
             }
         }
+    }
+
+    private func addExternalSubtitles() {
+        guard let core, !externalSubtitles.isEmpty else { return }
+        for subtitle in externalSubtitles {
+            let location = subtitle.url.isFileURL ? subtitle.url.path : subtitle.url.absoluteString
+            let status = core.command(["sub-add", location, subtitle.isDefault ? "select" : "auto", subtitle.title, subtitle.language ?? ""])
+            if status < 0 {
+                AppLog.shared.log("mpv: couldn't add subtitle \(subtitle.title): \(MPVCore.errorString(status))", level: .warning)
+            }
+        }
+        AppLog.shared.log("Added \(externalSubtitles.count) external subtitle file(s)")
     }
 
     private func configureAudioSession() {

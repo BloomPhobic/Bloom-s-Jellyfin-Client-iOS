@@ -217,6 +217,15 @@ struct LibraryAPI {
         return try await client.send(Paths.getItems(parameters: parameters)).value.items ?? []
     }
 
+    /// An item with its chapters and preview-picture (trickplay) details asked for by name.
+    func playbackDetails(_ itemID: String) async throws -> BaseItemDto? {
+        var parameters = Paths.GetItemsParameters()
+        parameters.userID = userID
+        parameters.ids = [itemID]
+        parameters.fields = [.chapters, .trickplay]
+        return try await client.send(Paths.getItems(parameters: parameters)).value.items?.first
+    }
+
     /// Intro, recap, preview and credits markers, if the server has them.
     func segments(itemID: String) async throws -> [MediaSegmentDto] {
         try await client.send(Paths.getItemSegments(itemID: itemID)).value.items ?? []
@@ -237,6 +246,16 @@ struct LibraryAPI {
     }
 
     // MARK: - URLs
+
+    /// Subtitle files kept next to the video on the server. A direct-play stream only carries the
+    /// subtitles inside the video file, so these are fetched separately.
+    func externalSubtitles(itemID: String, source: MediaSourceInfo?) -> [ExternalSubtitle] {
+        guard let sourceID = source?.id else { return [] }
+        return ExternalSubtitle.streams(source).compactMap { entry in
+            let request = Paths.getSubtitle(routeItemID: itemID, routeMediaSourceID: sourceID, routeIndex: entry.index, routeFormat: entry.format)
+            return client.url(with: request, queryAPIKey: true).map { ExternalSubtitle(url: $0, stream: entry.stream) }
+        }
+    }
 
     func imageURL(_ image: ImageRef?, maxWidth: Int) -> URL? {
         guard let image else { return nil }

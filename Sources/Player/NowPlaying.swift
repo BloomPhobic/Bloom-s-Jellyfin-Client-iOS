@@ -16,6 +16,7 @@ final class NowPlaying {
 
     func start(_ session: PlaybackSession) {
         self.session = session
+        UIApplication.shared.beginReceivingRemoteControlEvents()
         let center = MPRemoteCommandCenter.shared()
         add(center.playCommand) { session in
             if session.player.isPaused { session.player.togglePause() }
@@ -125,6 +126,7 @@ final class NowPlaying {
         }
         targets = []
         session = nil
+        UIApplication.shared.endReceivingRemoteControlEvents()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }

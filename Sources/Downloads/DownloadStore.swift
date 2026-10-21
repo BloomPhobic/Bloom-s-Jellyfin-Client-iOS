@@ -86,6 +86,11 @@ enum DownloadFiles {
         folder(id).appendingPathComponent("still.jpg")
     }
 
+    /// An external subtitle file saved with the download, by its stream index.
+    static func subtitle(_ id: String, index: Int, format: String) -> URL {
+        folder(id).appendingPathComponent("subtitle-\(index).\(format)")
+    }
+
     /// Space left on the phone for things the user asked for.
     static var freeBytes: Int64 {
         let values = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
@@ -477,6 +482,7 @@ final class DownloadStore {
             records[itemID]?.segments = segments
             save()
         }
+        await saveSubtitles(itemID: itemID, item: item, api: api)
         let images: [(ImageRef?, Int, URL)] = [
             (Artwork.poster(item), 400, DownloadFiles.poster(itemID)),
             (Artwork.landscape(item), 600, DownloadFiles.still(itemID)),
@@ -489,6 +495,36 @@ final class DownloadStore {
             try? result.0.write(to: destination)
         }
         artworkRevision += 1
+    }
+
+    /// Subtitle files that sit next to the video on the server; they aren't part of the video file.
+    private func saveSubtitles(itemID: String, item: BaseItemDto, api: LibraryAPI) async {
+        let source = item.mediaSources?.first { $0.id == records[itemID]?.mediaSourceID } ?? item.mediaSources?.first
+        let entries = ExternalSubtitle.streams(source)
+        let subtitles = api.externalSubtitles(itemID: itemID, source: source)
+        var saved = 0
+        for (entry, subtitle) in zip(entries, subtitles) {
+            let destination = DownloadFiles.subtitle(itemID, index: entry.index, format: entry.format)
+            guard let result = try? await URLSession.shared.data(from: subtitle.url),
+                  (result.1 as? HTTPURLResponse)?.statusCode == 200,
+                  records[itemID] != nil else { continue }
+            try? result.0.write(to: destination)
+            saved += 1
+        }
+        if saved > 0 {
+            AppLog.shared.log("Saved \(saved) subtitle file(s) for \(Self.title(item))")
+        }
+    }
+
+    /// Subtitle files saved with a download, for playing it.
+    func externalSubtitles(_ itemID: String?) -> [ExternalSubtitle] {
+        guard let itemID, let record = records[itemID] else { return [] }
+        let source = record.item.mediaSources?.first { $0.id == record.mediaSourceID } ?? record.item.mediaSources?.first
+        return ExternalSubtitle.streams(source).compactMap { entry in
+            let file = DownloadFiles.subtitle(itemID, index: entry.index, format: entry.format)
+            guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+            return ExternalSubtitle(url: file, stream: entry.stream)
+        }
     }
 
     // MARK: - Events from the URL session

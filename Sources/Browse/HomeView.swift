@@ -69,6 +69,9 @@ struct BrowseDestination: View {
 @MainActor
 @Observable
 final class BrowseNavigator {
+    /// Posted (with "id" and "name") to open a show's page on the Home tab, from another tab.
+    static let openSeriesNotification = Notification.Name("openSeriesOnHome")
+
     var path: [BrowseRoute] = []
 
     func openSeries(id: String, name: String?) {

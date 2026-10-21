@@ -397,6 +397,14 @@ private struct ShowDownloadsView: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if store.isConnected && store.session != nil {
+                Button {
+                    NotificationCenter.default.post(name: BrowseNavigator.openSeriesNotification, object: nil, userInfo: ["id": seriesID, "name": name])
+                } label: {
+                    Image(systemName: "tv")
+                }
+                .accessibilityLabel("Go to show")
+            }
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {

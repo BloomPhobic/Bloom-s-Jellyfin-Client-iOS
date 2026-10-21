@@ -97,6 +97,19 @@ final class PlaybackSession: Identifiable {
         mediaSourceID = source.id
         reporter = offline ? nil : PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
         Self.logPlay(item: item, source: source, startSeconds: startSeconds, local: url.isFileURL)
+        player.externalSubtitles = externalSubtitles(for: item, source: source)
+    }
+
+    /// Subtitle files beside the video: the copies saved with a download, otherwise the server's.
+    private func externalSubtitles(for item: BaseItemDto, source: MediaSourceInfo?) -> [ExternalSubtitle] {
+        guard let itemID = item.id else { return [] }
+        if isPlayingDownload {
+            let saved = DownloadStore.shared.externalSubtitles(itemID)
+            if !saved.isEmpty || isOffline {
+                return saved
+            }
+        }
+        return api.externalSubtitles(itemID: itemID, source: source)
     }
 
     /// The downloaded file if there is one (no data used, works offline), otherwise the stream.
@@ -138,7 +151,8 @@ final class PlaybackSession: Identifiable {
     /// Loads the skip markers, the next episode and the season list for the current item.
     func loadExtras() async {
         guard let itemID = item.id else { return }
-        loadChapters()
+        await loadChapters()
+        guard item.id == itemID else { return }
         if isOffline {
             loadOfflineExtras()
             return
@@ -196,15 +210,30 @@ final class PlaybackSession: Identifiable {
     }
 
     /// Chapters come with the item (also for downloads). Preview pictures need the server.
-    private func loadChapters() {
-        chapters = (item.chapters ?? []).enumerated().compactMap { index, chapter in
+    private func loadChapters() async {
+        thumbnailLoader?.cancel()
+        var details = item
+        if !isOffline, let itemID = item.id {
+            do {
+                if let fetched = try await api.playbackDetails(itemID) {
+                    details.chapters = fetched.chapters ?? item.chapters
+                    details.trickplay = fetched.trickplay ?? item.trickplay
+                }
+            } catch {
+                AppLog.shared.log("Couldn't load chapters and previews: \(error.localizedDescription)", level: .warning)
+            }
+            guard item.id == itemID else { return }
+        }
+        let manifest = details.trickplay ?? [:]
+        let sizes = manifest.map { key, value in "\(key): \(value.keys.sorted().joined(separator: "/"))" }
+        AppLog.shared.log("Preview pictures on server: \(sizes.isEmpty ? "none" : sizes.joined(separator: ", ")) (playing source \(mediaSourceID ?? "?"))")
+        chapters = (details.chapters ?? []).enumerated().compactMap { index, chapter in
             guard let ticks = chapter.startPositionTicks else { return nil }
             let name = chapter.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Chapter \(index + 1)"
             return PlaybackChapter(index: index, name: name, start: Double(ticks) / 10_000_000, imageTag: chapter.imageTag)
         }
         .sorted { $0.start < $1.start }
-        thumbnailLoader?.cancel()
-        thumbnails = isOffline ? nil : TrickplayThumbnails(item: item, mediaSourceID: mediaSourceID, client: api.client)
+        thumbnails = isOffline ? nil : TrickplayThumbnails(item: details, mediaSourceID: mediaSourceID, client: api.client)
         if let thumbnails {
             thumbnailLoader = Task { await thumbnails.preload() }
         }
@@ -377,6 +406,7 @@ final class PlaybackSession: Identifiable {
         isPlayingDownload = url.isFileURL
         lastGoodPosition = start
         retryCount = 0
+        player.externalSubtitles = externalSubtitles(for: full, source: source)
         player.load(url: url, startSeconds: start)
         await loadExtras()
     }
@@ -398,6 +428,7 @@ final class PlaybackSession: Identifiable {
         reporter = PlaybackReporter(client: newAPI.client, itemID: itemID, mediaSourceID: mediaSourceID)
         currentURL = url
         retryCount = 0
+        player.externalSubtitles = externalSubtitles(for: item, source: item.mediaSources?.first { $0.id == mediaSourceID })
         player.load(url: url, startSeconds: position)
     }
 

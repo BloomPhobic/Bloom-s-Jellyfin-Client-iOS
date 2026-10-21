@@ -7,6 +7,43 @@ struct MediaTrack: Identifiable, Equatable {
     let isSelected: Bool
 }
 
+/// A subtitle kept as its own file next to the video (an .srt or .ass beside the .mkv), so it
+/// isn't inside the video stream and has to be given to the player separately.
+struct ExternalSubtitle {
+    let url: URL
+    let title: String
+    let language: String?
+    let isDefault: Bool
+
+    /// The file format to ask the server for: the original for formats the player reads, SRT
+    /// (converted by the server) for other text formats. Picture subtitles are left out.
+    static func format(_ stream: MediaStream) -> String? {
+        switch stream.codec?.lowercased() {
+        case "subrip", "srt": return "srt"
+        case "ass": return "ass"
+        case "ssa": return "ssa"
+        case "webvtt", "vtt": return "vtt"
+        default: return stream.isTextSubtitleStream == true ? "srt" : nil
+        }
+    }
+
+    /// The external subtitle streams of a media source, with the format to fetch each in.
+    static func streams(_ source: MediaSourceInfo?) -> [(stream: MediaStream, index: Int, format: String)] {
+        (source?.mediaStreams ?? []).compactMap { stream in
+            guard stream.type == .subtitle, stream.isExternal == true,
+                  let index = stream.index, let format = format(stream) else { return nil }
+            return (stream, index, format)
+        }
+    }
+
+    init(url: URL, stream: MediaStream) {
+        self.url = url
+        title = stream.displayTitle ?? stream.title ?? stream.language ?? "External"
+        language = stream.language
+        isDefault = stream.isDefault == true
+    }
+}
+
 /// The player UI talks to this protocol, so the engine (mpv today, possibly AVPlayer as a fallback)
 /// can be swapped without touching the UI.
 @MainActor

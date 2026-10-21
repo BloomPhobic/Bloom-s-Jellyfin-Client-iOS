@@ -26,7 +26,10 @@ final class TrickplayThumbnails {
     /// Nil when the server has no thumbnails for this video.
     init?(item: BaseItemDto, mediaSourceID: String?, client: JellyfinClient) {
         guard let itemID = item.id, let manifest = item.trickplay, !manifest.isEmpty else { return nil }
-        let resolutions = mediaSourceID.flatMap { manifest[$0] } ?? (manifest.count == 1 ? manifest.values.first : nil)
+        // IDs can come with or without dashes, so compare them without.
+        func plain(_ id: String) -> String { id.replacingOccurrences(of: "-", with: "").lowercased() }
+        let wanted = mediaSourceID.map(plain)
+        let resolutions = manifest.first { plain($0.key) == wanted }?.value ?? (manifest.count == 1 ? manifest.values.first : nil)
         // The smallest size that is still sharp on a phone; usually there is only 320.
         let options = (resolutions ?? [:]).values.sorted { ($0.width ?? 0) < ($1.width ?? 0) }
         guard let info = options.first(where: { ($0.width ?? 0) >= 320 }) ?? options.last,

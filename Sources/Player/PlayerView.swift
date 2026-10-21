@@ -658,6 +658,8 @@ private struct SeekBar: View {
     let onCommit: (Double) -> Void
 
     @State private var isDragging = false
+    /// The finger slid up off the bar: letting go won't jump anywhere.
+    @State private var isCancelled = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -714,13 +716,18 @@ private struct SeekBar: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         isDragging = true
-                        scrubPosition = Double(min(max(value.location.x / max(width, 1), 0), 1)) * duration
+                        // Slide up away from the bar to look without jumping; come back down to carry on.
+                        isCancelled = value.translation.height < -70
+                        scrubPosition = isCancelled ? nil : Double(min(max(value.location.x / max(width, 1), 0), 1)) * duration
                     }
                     .onEnded { value in
-                        let target = Double(min(max(value.location.x / max(width, 1), 0), 1)) * duration
-                        onCommit(target)
+                        if !isCancelled {
+                            let target = Double(min(max(value.location.x / max(width, 1), 0), 1)) * duration
+                            onCommit(target)
+                        }
                         scrubPosition = nil
                         isDragging = false
+                        isCancelled = false
                     }
             )
         }
@@ -849,8 +856,10 @@ private struct ChapterListView: View {
                             close()
                         } label: {
                             HStack(spacing: 12) {
-                                ChapterPicture(session: session, chapter: chapter)
-                                    .frame(width: 110)
+                                if session.thumbnails != nil || chapter.imageTag != nil {
+                                    ChapterPicture(session: session, chapter: chapter)
+                                        .frame(width: 110)
+                                }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(verbatim: chapter.name)
                                         .font(.subheadline.weight(chapter == current ? .bold : .regular))
