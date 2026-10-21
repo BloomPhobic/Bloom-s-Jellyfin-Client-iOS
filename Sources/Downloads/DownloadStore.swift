@@ -520,7 +520,7 @@ final class DownloadStore {
     func externalSubtitles(_ itemID: String?) -> [ExternalSubtitle] {
         guard let itemID, let record = records[itemID] else { return [] }
         let source = record.item.mediaSources?.first { $0.id == record.mediaSourceID } ?? record.item.mediaSources?.first
-        return ExternalSubtitle.streams(source).compactMap { entry in
+        return ExternalSubtitle.streams(source).compactMap { entry -> ExternalSubtitle? in
             let file = DownloadFiles.subtitle(itemID, index: entry.index, format: entry.format)
             guard FileManager.default.fileExists(atPath: file.path) else { return nil }
             return ExternalSubtitle(url: file, stream: entry.stream)

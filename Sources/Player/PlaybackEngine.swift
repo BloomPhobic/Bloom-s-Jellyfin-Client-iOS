@@ -1,4 +1,5 @@
 import Foundation
+import JellyfinAPI
 
 /// An audio or subtitle track offered by a playback engine.
 struct MediaTrack: Identifiable, Equatable {
@@ -29,7 +30,7 @@ struct ExternalSubtitle {
 
     /// The external subtitle streams of a media source, with the format to fetch each in.
     static func streams(_ source: MediaSourceInfo?) -> [(stream: MediaStream, index: Int, format: String)] {
-        (source?.mediaStreams ?? []).compactMap { stream in
+        (source?.mediaStreams ?? []).compactMap { stream -> (stream: MediaStream, index: Int, format: String)? in
             guard stream.type == .subtitle, stream.isExternal == true,
                   let index = stream.index, let format = format(stream) else { return nil }
             return (stream, index, format)
