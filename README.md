@@ -4,21 +4,24 @@ A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in
 
 **Status:** in daily use by the developer. Features:
 
-- Direct play through mpv (hardware decoding, HDR10 passthrough, ASS/PGS subtitles, audio and subtitle track selection)
+- Direct play through mpv (hardware decoding, HDR10 passthrough, ASS/PGS subtitles and external subtitle files, audio and subtitle track selection)
 - A full player: auto-hiding controls, skip intro and credits, play next episode automatically, an episode list and subtitle options inside the player, and watch progress synced to the server
 - Playback speed (0.5× to 2×), and hold the left or right side of the screen to play faster (2× by default)
+- Chapters, preview pictures while scrubbing (when the server has made trickplay images), pinch to fill the screen, and lock screen and Control Center controls
 - Servers with several addresses (for example local network, Tailscale and a public domain): all are checked at the same time and the highest-priority one that answers is used, and they are checked again when the network changes. A new address is only saved once a Jellyfin server answers on it
 - Several accounts; sign in with the server's user list, a username and password, or Quick Connect; the sign-in is kept in the Keychain
 - Home screen with Continue watching, Next up, Recently added per library, watch history and library shortcuts
-- Library grids with sort and filters, show pages with seasons and episodes, search (shows first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
+- Library grids with sort and filters, show pages with seasons and episodes, cast and "More like this" rows, person pages, search (shows first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
 - Downloads: original files only (never transcoded), downloaded in the background, Wi-Fi only unless mobile data is allowed, played offline in the same player, with offline progress synced when the connection returns
 - Accent colour setting
 
 Planned: an iPad layout, and picture in picture.
 
-## Install a development build
+## Install
 
-Each push to `main` is built on GitHub Actions and published as an unsigned `.ipa` on the [latest pre-release](../../releases/tag/latest). Install it with SideStore or LiveContainer, which sign it on the device.
+Download the `.ipa` from the [latest release](../../releases/latest) and install it with SideStore or LiveContainer, which sign it on the device.
+
+Each push to `main` is also built on GitHub Actions and published as an unsigned `.ipa` on the [development build](../../releases/tag/latest) pre-release. It has the newest changes but is less tested.
 
 ## Building
 
