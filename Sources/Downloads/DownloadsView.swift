@@ -384,6 +384,16 @@ private struct ShowDownloadsView: View {
 
     var body: some View {
         List {
+            if store.isConnected && store.session != nil {
+                Button {
+                    NotificationCenter.default.post(name: BrowseNavigator.openSeriesNotification, object: nil, userInfo: ["id": seriesID, "name": name])
+                } label: {
+                    RowLabel(title: "Go to \(name)", subtitle: nil, systemImage: "tv")
+                }
+                .buttonStyle(PressableStyle())
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
             ForEach(seasons) { season in
                 Section(season.name) {
                     ForEach(season.episodes) { record in
@@ -397,14 +407,6 @@ private struct ShowDownloadsView: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if store.isConnected && store.session != nil {
-                Button {
-                    NotificationCenter.default.post(name: BrowseNavigator.openSeriesNotification, object: nil, userInfo: ["id": seriesID, "name": name])
-                } label: {
-                    Image(systemName: "tv")
-                }
-                .accessibilityLabel("Go to show")
-            }
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {

@@ -393,7 +393,8 @@ struct PlayerView: View {
             Spacer()
 
             HStack(spacing: 12) {
-                Text(Self.format(scrubPosition ?? player.position))
+                // The times keep showing where playback is; the scrub time shows above the finger.
+                Text(Self.format(player.position))
                 SeekBar(
                     position: player.position,
                     duration: player.duration,
@@ -403,7 +404,7 @@ struct PlayerView: View {
                 ) { target in
                     player.seek(to: target)
                 }
-                Text("-" + Self.format(max(0, player.duration - (scrubPosition ?? player.position))))
+                Text("-" + Self.format(max(0, player.duration - player.position)))
                     .foregroundStyle(Theme.text2)
             }
             .font(.system(size: 12, weight: .semibold).monospacedDigit())
