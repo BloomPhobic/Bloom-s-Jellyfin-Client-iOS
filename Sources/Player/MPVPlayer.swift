@@ -32,6 +32,13 @@ final class MPVPlayer: PlaybackEngine {
     @ObservationIgnored let pictureInPicture = PictureInPicture()
     @ObservationIgnored private var core: MPVCore?
     @ObservationIgnored private var isVideoEnabled = true
+    /// iOS took the graphics chip away (the phone was locked with the floating window open), and
+    /// mpv's video output stays broken until it's rebuilt.
+    @ObservationIgnored private var isVideoLost = false
+    @ObservationIgnored private var videoRestart: Task<Void, Never>?
+    @ObservationIgnored private var restartDelay: Double = 1
+    @ObservationIgnored private var lastLogText = ""
+    @ObservationIgnored private var repeatedLogs = 0
 
     private static let observedProperties = ["track-list", "pause", "paused-for-cache", "duration"]
 
@@ -91,6 +98,7 @@ final class MPVPlayer: PlaybackEngine {
 
     func stop() {
         guard let core else { return }
+        videoRestart?.cancel()
         pictureInPicture.detach()
         core.shutdown()
         self.core = nil
@@ -206,10 +214,66 @@ final class MPVPlayer: PlaybackEngine {
         if !enabled && !keepPlaying {
             core.setString("pause", "yes")
         }
+        if enabled && isVideoLost {
+            restartVideo()
+            return
+        }
         // Setting it again to the same value would make mpv reload the video track.
         guard enabled != isVideoEnabled else { return }
         isVideoEnabled = enabled
         core.setString("vid", enabled ? "auto" : "no")
+        if !enabled {
+            // Turning the video off rebuilds it on the way back anyway.
+            isVideoLost = false
+            videoRestart?.cancel()
+        }
+    }
+
+    /// Rebuilds mpv's video output if iOS broke it. Called when the app comes back and when the
+    /// phone is unlocked; until then it's retried every few seconds, since there's no reliable
+    /// signal for the floating window getting the graphics chip back.
+    func restartVideoIfLost() {
+        if isVideoLost {
+            restartVideo()
+        }
+    }
+
+    private func videoOutputLost() {
+        guard !isVideoLost, isVideoEnabled else { return }
+        isVideoLost = true
+        AppLog.shared.log("Video output lost (iOS stopped the app's graphics); restarting it when possible", level: .warning)
+        scheduleVideoRestart()
+    }
+
+    private func scheduleVideoRestart() {
+        videoRestart?.cancel()
+        let delay = restartDelay
+        videoRestart = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.restartVideo()
+        }
+    }
+
+    /// Turns the video track off and on again, which makes mpv build a new video output and a new
+    /// decoder (so hardware decoding comes back too).
+    private func restartVideo() {
+        guard let core, isVideoLost, isVideoEnabled else { return }
+        videoRestart?.cancel()
+        isVideoLost = false
+        // Fails again while the phone is still locked; back off so it isn't retried constantly.
+        restartDelay = min(restartDelay * 2, 10)
+        core.setString("vid", "no")
+        videoRestart = Task { [weak self] in
+            // mpv has to see the track switched off before it's switched back on.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let self, !Task.isCancelled, let core = self.core, self.isVideoEnabled else { return }
+            core.setString("vid", "auto")
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled && !self.isVideoLost {
+                self.restartDelay = 1
+            }
+        }
     }
 
     /// Where the video sits in mpv's picture, in pixels, leaving out the black bars.
@@ -316,6 +380,19 @@ final class MPVPlayer: PlaybackEngine {
             case "warn": appLevel = .warning
             default: appLevel = .info
             }
+            if text.contains("VK_ERROR_DEVICE_LOST") {
+                videoOutputLost()
+            }
+            // The same failure can repeat many times a second; log it once with a count.
+            if text == lastLogText {
+                repeatedLogs += 1
+                return
+            }
+            if repeatedLogs > 0 {
+                AppLog.shared.log("mpv: (last message repeated \(repeatedLogs) more times)")
+                repeatedLogs = 0
+            }
+            lastLogText = text
             AppLog.shared.log("mpv[\(prefix)] \(text)", level: appLevel)
         case .propertyChanged(let name):
             if name == "track-list" {

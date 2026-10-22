@@ -100,6 +100,10 @@ struct PlayerView: View {
                 break
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+            // Unlocked: the floating window can draw again.
+            player.restartVideoIfLost()
+        }
         .onChange(of: store.client?.configuration.url) {
             if let client = store.client, let signedIn = store.session {
                 session.handoff(to: LibraryAPI(client: client, userID: signedIn.userID))
