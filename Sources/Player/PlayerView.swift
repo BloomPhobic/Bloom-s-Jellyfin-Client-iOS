@@ -706,6 +706,13 @@ private struct SeekBar: View {
                 Capsule()
                     .fill(Color.white.opacity(0.22))
                     .frame(height: track)
+                if duration > 0 && session.player.bufferedSeconds > 0 {
+                    // How far ahead the video is already loaded.
+                    let loaded = CGFloat(min((position + session.player.bufferedSeconds) / duration, 1))
+                    Capsule()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(width: width * loaded, height: track)
+                }
                 if duration > 0 {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                         Rectangle()

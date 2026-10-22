@@ -62,9 +62,13 @@ final class MPVPlayer: PlaybackEngine {
             ("target-colorspace-hint", PlayerSettings.hdrPassthrough ? "yes" : "no"),
             ("video-rotate", "no"),
             ("keep-open", "yes"),
-            ("cache", "yes"),
-            ("demuxer-max-bytes", "150MiB"),
-            ("demuxer-max-back-bytes", "50MiB"),
+            ("cache", url.isFileURL ? "no" : "yes"),
+            // The read-ahead lives in a file on the phone rather than in memory, so it can hold
+            // several minutes of even a big film; slow patches on mobile data then don't pause.
+            ("cache-on-disk", "yes"),
+            ("demuxer-cache-dir", Self.cacheDirectory.path),
+            ("demuxer-max-bytes", "\(Self.readAheadMegabytes)MiB"),
+            ("demuxer-max-back-bytes", "200MiB"),
             ("subs-fallback", "yes"),
             ("embeddedfonts", "yes"),
             ("panscan", isZoomed ? "1.0" : "0.0"),
@@ -96,6 +100,9 @@ final class MPVPlayer: PlaybackEngine {
             return
         }
         core = newCore
+        if !url.isFileURL {
+            AppLog.shared.log("Read-ahead: up to \(Self.readAheadMegabytes) MB, kept on the phone")
+        }
         applySubtitleStyle()
         newCore.command(["loadfile", url.absoluteString, "replace"])
         UIApplication.shared.isIdleTimerDisabled = true
@@ -122,6 +129,8 @@ final class MPVPlayer: PlaybackEngine {
         position = startSeconds
         duration = 0
         videoQuality = nil
+        // Downloads are read straight from the phone; copying them into the cache would only wear it.
+        core.setString("cache", url.isFileURL ? "no" : "yes")
         core.command(["loadfile", url.absoluteString, "replace"])
         core.setString("pause", "no")
     }
@@ -460,6 +469,23 @@ final class MPVPlayer: PlaybackEngine {
             }
         }
         AppLog.shared.log("Added \(externalSubtitles.count) external subtitle file(s)")
+    }
+
+    /// Where mpv keeps the read-ahead. Its files are deleted as soon as the player closes.
+    private static var cacheDirectory: URL {
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PlayerCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    /// Up to 1 GB ahead (about 13 minutes of a 10 Mbps film), but never more than a quarter of
+    /// the free space on the phone.
+    private static var readAheadMegabytes: Int {
+        let values = try? cacheDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        let freeMegabytes = Int((values?.volumeAvailableCapacityForImportantUsage ?? 0) / 1_048_576)
+        guard freeMegabytes > 0 else { return 150 }
+        return min(1024, max(150, freeMegabytes / 4))
     }
 
     private func configureAudioSession() {
