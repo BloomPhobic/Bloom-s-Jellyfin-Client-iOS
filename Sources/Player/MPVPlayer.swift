@@ -1,4 +1,5 @@
 import AVFoundation
+import Metal
 import Observation
 import UIKit
 
@@ -36,7 +37,9 @@ final class MPVPlayer: PlaybackEngine {
     /// mpv's video output stays broken until it's rebuilt.
     @ObservationIgnored private var isVideoLost = false
     @ObservationIgnored private var videoRestart: Task<Void, Never>?
-    @ObservationIgnored private var restartDelay: Double = 1
+    /// Hardware decoding stopped (iOS ended the decoder in the background) and mpv carried on with
+    /// slower software decoding. Restarting the video in the app brings it back.
+    @ObservationIgnored private var isHardwareDecodingLost = false
     @ObservationIgnored private var lastLogText = ""
     @ObservationIgnored private var repeatedLogs = 0
 
@@ -214,7 +217,7 @@ final class MPVPlayer: PlaybackEngine {
         if !enabled && !keepPlaying {
             core.setString("pause", "yes")
         }
-        if enabled && isVideoLost {
+        if enabled && isVideoEnabled && (isVideoLost || isHardwareDecodingLost) {
             restartVideo()
             return
         }
@@ -225,54 +228,52 @@ final class MPVPlayer: PlaybackEngine {
         if !enabled {
             // Turning the video off rebuilds it on the way back anyway.
             isVideoLost = false
+            isHardwareDecodingLost = false
             videoRestart?.cancel()
         }
     }
 
-    /// Rebuilds mpv's video output if iOS broke it. Called when the app comes back and when the
-    /// phone is unlocked; until then it's retried every few seconds, since there's no reliable
-    /// signal for the floating window getting the graphics chip back.
+    /// Rebuilds mpv's video output if iOS broke it. Called when the phone is unlocked.
     func restartVideoIfLost() {
         if isVideoLost {
             restartVideo()
         }
     }
 
+    /// iOS took the graphics chip away (the phone was locked with the floating window open). The
+    /// video is switched off so mpv stops failing, and switched back on once a tiny test drawing
+    /// on the graphics chip goes through again.
     private func videoOutputLost() {
-        guard !isVideoLost, isVideoEnabled else { return }
+        guard let core, !isVideoLost, isVideoEnabled else { return }
         isVideoLost = true
-        AppLog.shared.log("Video output lost (iOS stopped the app's graphics); restarting it when possible", level: .warning)
-        scheduleVideoRestart()
-    }
-
-    private func scheduleVideoRestart() {
+        core.setString("vid", "no")
+        AppLog.shared.log("Video output lost (iOS stopped the app's graphics); waiting until it's allowed again", level: .warning)
         videoRestart?.cancel()
-        let delay = restartDelay
         videoRestart = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled else { return }
-            self?.restartVideo()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if await GPUCheck.isAvailable() {
+                    self?.restartVideo()
+                    return
+                }
+            }
         }
     }
 
-    /// Turns the video track off and on again, which makes mpv build a new video output and a new
-    /// decoder (so hardware decoding comes back too).
+    /// Switches the video track off and on again, which makes mpv build a new video output and a
+    /// new decoder (so hardware decoding comes back too).
     private func restartVideo() {
-        guard let core, isVideoLost, isVideoEnabled else { return }
+        guard let core, isVideoEnabled else { return }
         videoRestart?.cancel()
         isVideoLost = false
-        // Fails again while the phone is still locked; back off so it isn't retried constantly.
-        restartDelay = min(restartDelay * 2, 10)
+        isHardwareDecodingLost = false
+        AppLog.shared.log("Restarting video")
         core.setString("vid", "no")
         videoRestart = Task { [weak self] in
             // mpv has to see the track switched off before it's switched back on.
             try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled, let core = self.core, self.isVideoEnabled else { return }
             core.setString("vid", "auto")
-            try? await Task.sleep(for: .seconds(5))
-            if !Task.isCancelled && !self.isVideoLost {
-                self.restartDelay = 1
-            }
         }
     }
 
@@ -382,6 +383,8 @@ final class MPVPlayer: PlaybackEngine {
             }
             if text.contains("VK_ERROR_DEVICE_LOST") {
                 videoOutputLost()
+            } else if text.hasPrefix("Attempting next decoding method after failure of") && text.contains("videotoolbox") {
+                isHardwareDecodingLost = true
             }
             // The same failure can repeat many times a second; log it once with a count.
             if text == lastLogText {
@@ -496,6 +499,26 @@ final class MPVMetalLayer: CAMetalLayer {
                     super.wantsExtendedDynamicRangeContent = newValue
                 }
             }
+        }
+    }
+}
+
+/// Whether iOS lets the app use the graphics chip right now. It doesn't while the phone is locked,
+/// and a tiny piece of work sent to it fails instead of running.
+enum GPUCheck {
+    private static let queue = MTLCreateSystemDefaultDevice()?.makeCommandQueue()
+    private static let scratch = queue?.device.makeBuffer(length: 16)
+
+    static func isAvailable() async -> Bool {
+        guard let queue, let scratch, let commandBuffer = queue.makeCommandBuffer(),
+              let blit = commandBuffer.makeBlitCommandEncoder() else { return false }
+        blit.fill(buffer: scratch, range: 0..<16, value: 0)
+        blit.endEncoding()
+        return await withCheckedContinuation { continuation in
+            commandBuffer.addCompletedHandler { buffer in
+                continuation.resume(returning: buffer.status == .completed && buffer.error == nil)
+            }
+            commandBuffer.commit()
         }
     }
 }
