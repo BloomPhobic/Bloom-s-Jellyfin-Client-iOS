@@ -8,7 +8,7 @@ struct MPVVideoView: UIViewRepresentable {
     var startSeconds: Double = 0
 
     func makeUIView(context: Context) -> MPVHostView {
-        let view = MPVHostView(videoLayer: player.layer)
+        let view = MPVHostView(videoLayer: player.layer, pictureInPictureLayer: player.pictureInPicture.displayLayer)
         view.onFirstLayout = { [player, url, startSeconds] in
             player.start(url: url, startSeconds: startSeconds)
         }
@@ -20,14 +20,17 @@ struct MPVVideoView: UIViewRepresentable {
 
 final class MPVHostView: UIView {
     private let videoLayer: CAMetalLayer
+    private let pictureInPictureLayer: CALayer
     var onFirstLayout: (@MainActor () -> Void)?
 
-    init(videoLayer: CAMetalLayer) {
+    init(videoLayer: CAMetalLayer, pictureInPictureLayer: CALayer) {
         self.videoLayer = videoLayer
+        self.pictureInPictureLayer = pictureInPictureLayer
         super.init(frame: .zero)
         backgroundColor = .black
-        videoLayer.framebufferOnly = true
         videoLayer.backgroundColor = UIColor.black.cgColor
+        // Hidden behind the video; iOS needs it on screen to open the floating window from it.
+        layer.addSublayer(pictureInPictureLayer)
         layer.addSublayer(videoLayer)
     }
 
@@ -53,6 +56,7 @@ final class MPVHostView: UIView {
         videoLayer.transform = CATransform3DMakeScale(factor, factor, 1)
         videoLayer.contentsScale = scale
         videoLayer.drawableSize = drawableSize
+        pictureInPictureLayer.frame = bounds
         CATransaction.commit()
 
         if bounds.width > 1, bounds.height > 1, let start = onFirstLayout {

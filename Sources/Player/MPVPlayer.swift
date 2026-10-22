@@ -29,13 +29,16 @@ final class MPVPlayer: PlaybackEngine {
     @ObservationIgnored var externalSubtitles: [ExternalSubtitle] = []
 
     let layer = MPVMetalLayer()
+    @ObservationIgnored let pictureInPicture = PictureInPicture()
     @ObservationIgnored private var core: MPVCore?
+    @ObservationIgnored private var isVideoEnabled = true
 
     private static let observedProperties = ["track-list", "pause", "paused-for-cache", "duration"]
 
     func start(url: URL, startSeconds: Double = 0) {
         guard core == nil else { return }
         configureAudioSession()
+        pictureInPicture.attach(self, layer: layer)
         // MoltenVK sends PQ output but doesn't ask iOS for EDR (HDR) mode, so request it here.
         layer.wantsExtendedDynamicRangeContent = PlayerSettings.hdrPassthrough
 
@@ -88,6 +91,7 @@ final class MPVPlayer: PlaybackEngine {
 
     func stop() {
         guard let core else { return }
+        pictureInPicture.detach()
         core.shutdown()
         self.core = nil
         UIApplication.shared.isIdleTimerDisabled = false
@@ -202,7 +206,21 @@ final class MPVPlayer: PlaybackEngine {
         if !enabled && !keepPlaying {
             core.setString("pause", "yes")
         }
+        // Setting it again to the same value would make mpv reload the video track.
+        guard enabled != isVideoEnabled else { return }
+        isVideoEnabled = enabled
         core.setString("vid", enabled ? "auto" : "no")
+    }
+
+    /// Where the video sits in mpv's picture, in pixels, leaving out the black bars.
+    func pictureArea() -> CGRect? {
+        guard let core, let width = core.double("osd-dimensions/w"), let height = core.double("osd-dimensions/h"),
+              width > 0, height > 0 else { return nil }
+        let left = core.double("osd-dimensions/ml") ?? 0
+        let right = core.double("osd-dimensions/mr") ?? 0
+        let top = core.double("osd-dimensions/mt") ?? 0
+        let bottom = core.double("osd-dimensions/mb") ?? 0
+        return CGRect(x: left, y: top, width: width - left - right, height: height - top - bottom)
     }
 
     // MARK: - State
@@ -341,8 +359,44 @@ final class MPVPlayer: PlaybackEngine {
     }
 }
 
-/// CAMetalLayer with two workarounds from the MPVKit demo.
+/// CAMetalLayer with two workarounds from the MPVKit demo, and a hook for picture in picture.
 final class MPVMetalLayer: CAMetalLayer {
+    private let frameLock = NSLock()
+    private var frameHandler: ((CAMetalDrawable) -> Void)?
+    private var lastDrawable: CAMetalDrawable?
+
+    /// Gets each picture once mpv has finished drawing it, on mpv's render thread.
+    var onFrame: ((CAMetalDrawable) -> Void)? {
+        get { frameLock.withLock { frameHandler } }
+        set {
+            frameLock.withLock {
+                frameHandler = newValue
+                lastDrawable = nil
+            }
+        }
+    }
+
+    // mpv asks for the next picture only after it has sent off the last one, so the last one is
+    // complete by now and can be copied.
+    override func nextDrawable() -> CAMetalDrawable? {
+        let next = super.nextDrawable()
+        let (handler, finished) = frameLock.withLock {
+            let finished = lastDrawable
+            lastDrawable = frameHandler == nil ? nil : next
+            return (frameHandler, finished)
+        }
+        if let handler, let finished {
+            handler(finished)
+        }
+        return next
+    }
+
+    // Picture in picture reads mpv's pictures, which a framebuffer-only layer doesn't allow.
+    override var framebufferOnly: Bool {
+        get { super.framebufferOnly }
+        set { super.framebufferOnly = false }
+    }
+
     // MoltenVK can set drawableSize to 1x1 to force a presentation, which causes flicker.
     // https://github.com/mpv-player/mpv/pull/13651
     override var drawableSize: CGSize {

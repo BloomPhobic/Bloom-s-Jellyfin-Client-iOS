@@ -114,6 +114,13 @@ enum PlayerSettings {
         UserDefaults.standard.bool(forKey: backgroundAudioKey)
     }
 
+    static let pictureInPictureKey = "player.pictureInPicture"
+
+    /// Keep the video playing in a small floating window after swiping home.
+    static var pictureInPicture: Bool {
+        UserDefaults.standard.object(forKey: pictureInPictureKey) as? Bool ?? true
+    }
+
     static let autoplayNextKey = "player.autoplayNext"
 
     /// Count down and play the next episode automatically; when off, the card waits for a tap.

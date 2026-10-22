@@ -264,6 +264,7 @@ final class PlaybackSession: Identifiable {
     /// Called every half second by the player screen.
     func tick() {
         nowPlaying.update()
+        player.pictureInPicture.update()
         if player.errorMessage != nil {
             recoverIfPossible()
             return

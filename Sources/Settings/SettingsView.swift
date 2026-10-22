@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
     @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
     @AppStorage(PlayerSettings.backgroundAudioKey) private var backgroundAudio = false
+    @AppStorage(PlayerSettings.pictureInPictureKey) private var pictureInPicture = true
     @State private var imageCacheBytes = 0
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
     @AppStorage(DownloadStore.cellularKey) private var downloadOverCellular = false
@@ -49,6 +50,12 @@ struct SettingsView: View {
                     Text("Playback")
                 } footer: {
                     Text("Near the end of an episode, a card shows the next one. With autoplay on, it plays after a 10-second countdown; with it off, it waits for you to tap Play now.")
+                }
+
+                Section {
+                    Toggle("Picture in picture", isOn: $pictureInPicture)
+                } footer: {
+                    Text("Swipe home while a video plays and it carries on in a small window you can move around.")
                 }
 
                 Section {

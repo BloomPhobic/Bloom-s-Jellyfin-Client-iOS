@@ -92,8 +92,9 @@ struct PlayerView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
-                player.setVideoEnabled(false, keepPlaying: PlayerSettings.backgroundAudio)
+                enterBackground()
             case .active:
+                player.pictureInPicture.stop()
                 player.setVideoEnabled(true)
             default:
                 break
@@ -127,6 +128,23 @@ struct PlayerView: View {
         .onDisappear {
             session.close()
             OrientationLock.set(.allButUpsideDown, rotateTo: .portrait)
+        }
+    }
+
+    /// Turns the picture off in the background (and pauses, unless the sound should carry on).
+    /// Swiping home opens the floating window instead, which needs the picture; locking the phone
+    /// doesn't, so if the window hasn't opened after a moment, it's the usual background.
+    private func enterBackground() {
+        let pictureInPicture = player.pictureInPicture
+        guard pictureInPicture.willStartAutomatically || pictureInPicture.isActive else {
+            player.setVideoEnabled(false, keepPlaying: PlayerSettings.backgroundAudio)
+            return
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            if UIApplication.shared.applicationState == .background && !pictureInPicture.isActive {
+                player.setVideoEnabled(false, keepPlaying: PlayerSettings.backgroundAudio)
+            }
         }
     }
 
