@@ -2,11 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(SessionStore.self) private var store
-    @AppStorage(PlayerSettings.hdrPassthroughKey) private var hdrPassthrough = true
-    @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
-    @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
-    @AppStorage(PlayerSettings.backgroundAudioKey) private var backgroundAudio = false
-    @AppStorage(PlayerSettings.pictureInPictureKey) private var pictureInPicture = true
     @State private var imageCacheBytes = 0
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
     @AppStorage(DownloadStore.cellularKey) private var downloadOverCellular = false
@@ -45,32 +40,14 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Autoplay next episode", isOn: $autoplayNext)
-                } header: {
-                    Text("Playback")
+                    NavigationLink {
+                        PlaybackSettingsView()
+                            .tabBarClearance()
+                    } label: {
+                        Label("Playback", systemImage: "play.rectangle")
+                    }
                 } footer: {
-                    Text("Near the end of an episode, a card shows the next one. With autoplay on, it plays after a 10-second countdown; with it off, it waits for you to tap Play now.")
-                }
-
-                Section {
-                    Toggle("Picture in picture", isOn: $pictureInPicture)
-                } footer: {
-                    Text("Swipe home while a video plays and it carries on in a small window you can move around.")
-                }
-
-                Section {
-                    Toggle("Keep playing when locked", isOn: $backgroundAudio)
-                } footer: {
-                    Text("The sound carries on when you lock the phone or switch apps, and you can pause or skip from the lock screen. When off, playback pauses.")
-                }
-
-                Section {
-                    Toggle("HDR passthrough", isOn: $hdrPassthrough)
-                    Toggle("Hardware decoding", isOn: $hardwareDecoding)
-                } header: {
-                    Text("Video")
-                } footer: {
-                    Text("Changes apply the next time a video starts.")
+                    Text("Autoplay, picture in picture, playing when locked, HDR and decoding.")
                 }
 
                 Section {
@@ -118,16 +95,6 @@ struct SettingsView: View {
                     Text("Posters and backdrops are kept for faster loading. Past the limit, the oldest are removed automatically. Clearing only frees space; they download again when needed.")
                 }
 
-                Section("Diagnostics") {
-                    NavigationLink("Log") {
-                        LogView()
-                            .tabBarClearance()
-                    }
-                    Button("Run Keychain test") {
-                        KeychainCheck.run()
-                    }
-                }
-
                 Section {
                     LabeledContent("Version", value: "\(AppInfo.version) (build \(AppInfo.build))")
                     Link(destination: AppInfo.sourceURL) {
@@ -141,6 +108,12 @@ struct SettingsView: View {
                             .tabBarClearance()
                     } label: {
                         Label("Open-source licences", systemImage: "doc.text")
+                    }
+                    NavigationLink {
+                        DiagnosticsView()
+                            .tabBarClearance()
+                    } label: {
+                        Label("Diagnostics", systemImage: "stethoscope")
                     }
                 } header: {
                     Text("About")
@@ -184,5 +157,70 @@ struct SettingsView: View {
             get: { Appearance.color(hex: accentHex) },
             set: { accentHex = $0.hexString }
         )
+    }
+}
+
+/// Everything about how videos play.
+struct PlaybackSettingsView: View {
+    @AppStorage(PlayerSettings.hdrPassthroughKey) private var hdrPassthrough = true
+    @AppStorage(PlayerSettings.hardwareDecodingKey) private var hardwareDecoding = true
+    @AppStorage(PlayerSettings.autoplayNextKey) private var autoplayNext = true
+    @AppStorage(PlayerSettings.backgroundAudioKey) private var backgroundAudio = false
+    @AppStorage(PlayerSettings.pictureInPictureKey) private var pictureInPicture = true
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Autoplay next episode", isOn: $autoplayNext)
+            } footer: {
+                Text("Near the end of an episode, a card shows the next one. With autoplay on, it plays after a 10-second countdown; with it off, it waits for you to tap Play now.")
+            }
+
+            Section {
+                Toggle("Picture in picture", isOn: $pictureInPicture)
+            } footer: {
+                Text("Swipe home while a video plays and it carries on in a small window you can move around.")
+            }
+
+            Section {
+                Toggle("Keep playing when locked", isOn: $backgroundAudio)
+            } footer: {
+                Text("The sound carries on when you lock the phone or switch apps, and you can pause or skip from the lock screen. When off, playback pauses.")
+            }
+
+            Section {
+                Toggle("HDR passthrough", isOn: $hdrPassthrough)
+                Toggle("Hardware decoding", isOn: $hardwareDecoding)
+            } header: {
+                Text("Video")
+            } footer: {
+                Text("Changes apply the next time a video starts.")
+            }
+        }
+        .themedBackground()
+        .navigationTitle("Playback")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The log and checks, for tracking down problems.
+struct DiagnosticsView: View {
+    var body: some View {
+        List {
+            Section {
+                NavigationLink("Log") {
+                    LogView()
+                        .tabBarClearance()
+                }
+                Button("Run Keychain test") {
+                    KeychainCheck.run()
+                }
+            } footer: {
+                Text("The log records what the app and the player did, to send along when something goes wrong.")
+            }
+        }
+        .themedBackground()
+        .navigationTitle("Diagnostics")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

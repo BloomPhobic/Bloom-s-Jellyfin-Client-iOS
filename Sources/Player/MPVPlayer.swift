@@ -25,6 +25,8 @@ final class MPVPlayer: PlaybackEngine {
     private(set) var isHoldingSpeed = false
     /// The picture is cropped to fill the screen (no black bars). Remembered for next time.
     private(set) var isZoomed = PlayerSettings.zoomToFill
+    /// "1080p", "4K HDR" and so on, from the video mpv is actually playing.
+    private(set) var videoQuality: String?
     /// Subtitle files that sit next to the video on the server (or in the download), added to
     /// the player once the video has loaded.
     @ObservationIgnored var externalSubtitles: [ExternalSubtitle] = []
@@ -43,7 +45,7 @@ final class MPVPlayer: PlaybackEngine {
     @ObservationIgnored private var lastLogText = ""
     @ObservationIgnored private var repeatedLogs = 0
 
-    private static let observedProperties = ["track-list", "pause", "paused-for-cache", "duration"]
+    private static let observedProperties = ["track-list", "pause", "paused-for-cache", "duration", "video-params"]
 
     func start(url: URL, startSeconds: Double = 0) {
         guard core == nil else { return }
@@ -119,6 +121,7 @@ final class MPVPlayer: PlaybackEngine {
         isAtEnd = false
         position = startSeconds
         duration = 0
+        videoQuality = nil
         core.command(["loadfile", url.absoluteString, "replace"])
         core.setString("pause", "no")
     }
@@ -400,6 +403,8 @@ final class MPVPlayer: PlaybackEngine {
         case .propertyChanged(let name):
             if name == "track-list" {
                 refreshTracks()
+            } else if name == "video-params" {
+                refreshQuality()
             } else {
                 refreshState()
             }
@@ -413,6 +418,35 @@ final class MPVPlayer: PlaybackEngine {
                 errorMessage = error
                 AppLog.shared.log("Playback failed: \(error)", level: .error)
             }
+        }
+    }
+
+    /// Kept while the video is switched off (in the background), so it doesn't flicker on return.
+    private func refreshQuality() {
+        guard let core, let width = core.double("video-params/w"), let height = core.double("video-params/h"),
+              width > 0, height > 0 else { return }
+        let quality = Self.qualityLabel(width: width, height: height, gamma: core.string("video-params/gamma"))
+        if quality != videoQuality {
+            videoQuality = quality
+        }
+    }
+
+    /// Named by the usual sizes, judged by width too, so a widescreen film at 1920×800 is still 1080p.
+    static func qualityLabel(width: Double, height: Double, gamma: String?) -> String {
+        let size: String
+        if width >= 3200 || height >= 2000 {
+            size = "4K"
+        } else if width >= 1800 || height >= 1000 {
+            size = "1080p"
+        } else if width >= 1200 || height >= 700 {
+            size = "720p"
+        } else {
+            size = "\(Int(height))p"
+        }
+        switch gamma {
+        case "pq": return size + " HDR"
+        case "hlg": return size + " HLG"
+        default: return size
         }
     }
 

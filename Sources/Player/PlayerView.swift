@@ -283,9 +283,20 @@ struct PlayerView: View {
                 .accessibilityLabel("Close player")
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: session.headline)
-                        .font(.system(size: 15, weight: .bold))
-                        .lineLimit(1)
+                    HStack(spacing: 8) {
+                        Text(verbatim: session.headline)
+                            .font(.system(size: 15, weight: .bold))
+                            .lineLimit(1)
+                        if let quality = player.videoQuality {
+                            Text(verbatim: quality)
+                                .font(.system(size: 10, weight: .heavy))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Color.white.opacity(0.7), lineWidth: 1))
+                                .fixedSize()
+                                .accessibilityLabel("Quality \(quality)")
+                        }
+                    }
                     if let subheadline = session.subheadline {
                         Text(verbatim: subheadline)
                             .font(.system(size: 12))
