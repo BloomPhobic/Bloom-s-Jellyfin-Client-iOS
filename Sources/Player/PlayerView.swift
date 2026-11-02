@@ -342,15 +342,14 @@ struct PlayerView: View {
                     .buttonStyle(CircleButtonStyle(fill: panel == .speed ? Theme.accent.opacity(0.35) : Theme.scrim))
                     .accessibilityLabel("Playback speed, \(PlayerSettings.label(player.speed))")
                     AudioTrackMenu(player: player)
-                    SubtitleTrackMenu(player: player)
                     Button {
                         toggle(.subtitles)
                     } label: {
-                        Text("Aa")
-                            .font(.system(size: 15, weight: .bold))
+                        Image(systemName: "captions.bubble")
+                            .font(.system(size: 16, weight: .semibold))
                     }
                     .buttonStyle(CircleButtonStyle(fill: panel == .subtitles ? Theme.accent.opacity(0.35) : Theme.scrim))
-                    .accessibilityLabel("Subtitle size, style and timing")
+                    .accessibilityLabel("Subtitles")
                     Button {
                         showStats.toggle()
                         if showStats {
@@ -585,10 +584,11 @@ struct PlayerView: View {
 
     private var statsPanel: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(player.stats.enumerated()), id: \.offset) { _, row in
+            // The rest is still collected and goes to the log with the button below.
+            ForEach(Array(player.stats.filter { ["Format", "FPS", "Buffered"].contains($0.0) }.enumerated()), id: \.offset) { _, row in
                 Text(verbatim: "\(row.0): \(row.1)")
             }
-            Button("Copy stats to log") {
+            Button("Copy all stats to log") {
                 player.logStats()
             }
             .padding(.top, 4)
@@ -1054,10 +1054,57 @@ private struct SubtitleOptionsView: View {
     @AppStorage(SubtitleSettings.sizeKey) private var size = SubtitleSettings.Size.medium.rawValue
     @AppStorage(SubtitleSettings.styleKey) private var style = SubtitleSettings.Style.outline.rawValue
     @AppStorage(SubtitleSettings.boldKey) private var bold = false
+    @State private var showStyle = false
 
     var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: "Subtitles", close: close) { EmptyView() }
+            Picker("", selection: $showStyle) {
+                Text("Track").tag(false)
+                Text("Style").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 6)
+            if showStyle {
+                styleForm
+            } else {
+                trackList
+            }
+        }
+        .onChange(of: size) { player.applySubtitleStyle() }
+        .onChange(of: style) { player.applySubtitleStyle() }
+        .onChange(of: bold) { player.applySubtitleStyle() }
+    }
+
+    private var trackList: some View {
+        List {
+            trackRow("Off", selected: !player.subtitleTracks.contains(where: { $0.isSelected })) {
+                player.selectSubtitle(nil)
+            }
+            ForEach(player.subtitleTracks) { track in
+                trackRow(track.title, selected: track.isSelected) {
+                    player.selectSubtitle(track.id)
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    private func trackRow(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(verbatim: title)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark")
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var styleForm: some View {
             Form {
                 Section {
                     Picker("Size", selection: $size) {
@@ -1115,10 +1162,6 @@ private struct SubtitleOptionsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-        }
-        .onChange(of: size) { player.applySubtitleStyle() }
-        .onChange(of: style) { player.applySubtitleStyle() }
-        .onChange(of: bold) { player.applySubtitleStyle() }
     }
 
     private var delayHint: String {
@@ -1233,40 +1276,5 @@ private struct AudioTrackMenu: View {
                 .background(Circle().fill(Theme.scrim))
         }
         .accessibilityLabel("Audio track")
-    }
-}
-
-private struct SubtitleTrackMenu: View {
-    let player: MPVPlayer
-
-    var body: some View {
-        Menu {
-            Button {
-                player.selectSubtitle(nil)
-            } label: {
-                if player.subtitleTracks.contains(where: { $0.isSelected }) {
-                    Text("Off")
-                } else {
-                    Label("Off", systemImage: "checkmark")
-                }
-            }
-            ForEach(player.subtitleTracks) { track in
-                Button {
-                    player.selectSubtitle(track.id)
-                } label: {
-                    if track.isSelected {
-                        Label(track.title, systemImage: "checkmark")
-                    } else {
-                        Text(verbatim: track.title)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "captions.bubble")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Theme.scrim))
-        }
-        .accessibilityLabel("Subtitles")
     }
 }

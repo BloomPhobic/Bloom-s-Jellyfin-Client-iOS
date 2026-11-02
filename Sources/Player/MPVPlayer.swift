@@ -370,7 +370,8 @@ final class MPVPlayer: PlaybackEngine {
             ("Dropped", "decoder \(value("decoder-frame-drop-count")), output \(value("frame-drop-count"))"),
             ("Audio", "\(value("audio-codec-name")), \(value("audio-params/channel-count"))ch → \(value("current-ao"))"),
             ("Bitrate", "video \(bitsMbps("video-bitrate")), audio \(bitsMbps("audio-bitrate"))"),
-            ("Network", "\(mbps("cache-speed")), buffered \(value("demuxer-cache-duration"))s"),
+            ("Network", mbps("cache-speed")),
+            ("Buffered", "\(value("demuxer-cache-duration"))s"),
         ]
     }
 
