@@ -18,6 +18,8 @@ final class MPVPlayer: PlaybackEngine {
     private(set) var isAtEnd = false
     /// Seconds of video downloaded ahead of the playback position.
     private(set) var bufferedSeconds: Double = 0
+    /// Playing a downloaded file: nothing is buffered ahead, it is read straight from the phone.
+    private var isLocalFile = false
     private(set) var subtitleDelay: Double = 0
     /// The chosen playback speed. Kept for the next episode in the same player.
     private(set) var speed: Double = 1
@@ -130,6 +132,7 @@ final class MPVPlayer: PlaybackEngine {
         duration = 0
         videoQuality = nil
         // Downloads are read straight from the phone; copying them into the cache would only wear it.
+        isLocalFile = url.isFileURL
         core.setString("cache", url.isFileURL ? "no" : "yes")
         core.command(["loadfile", url.absoluteString, "replace"])
         core.setString("pause", "no")
@@ -371,7 +374,7 @@ final class MPVPlayer: PlaybackEngine {
             ("Audio", "\(value("audio-codec-name")), \(value("audio-params/channel-count"))ch → \(value("current-ao"))"),
             ("Bitrate", "video \(bitsMbps("video-bitrate")), audio \(bitsMbps("audio-bitrate"))"),
             ("Network", mbps("cache-speed")),
-            ("Buffered", "\(value("demuxer-cache-duration"))s"),
+            ("Buffered", isLocalFile ? "n/a (file on this phone)" : "\(value("demuxer-cache-duration"))s"),
         ]
     }
 
