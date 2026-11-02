@@ -37,6 +37,8 @@ struct DownloadRecord: Codable, Identifiable {
     var played: Bool?
     var progressUpdatedAt: Date?
     var needsSync: Bool
+    /// Watched/unwatched marked by hand, waiting to reach the server.
+    var markedPlayed: Bool? = nil
 
     var isEpisode: Bool { item.type == .episode }
 
@@ -635,12 +637,28 @@ final class DownloadStore {
         lastProgressNote[itemID] = now
         record.position = position
         record.played = position >= duration * 0.9
+        record.markedPlayed = nil
         record.progressUpdatedAt = now
         if !synced {
             record.needsSync = true
         }
         records[itemID] = record
         save()
+    }
+
+    /// Long-press → watched/unwatched. Works offline; the server is told as soon as there's a connection.
+    func setWatched(_ id: String, _ watched: Bool) {
+        guard var record = records[id] else { return }
+        record.played = watched
+        record.position = 0
+        record.progressUpdatedAt = Date()
+        record.markedPlayed = watched
+        record.needsSync = true
+        records[id] = record
+        save()
+        if sessionStore?.isConnected == true {
+            Task { await syncProgress() }
+        }
     }
 
     private func connectionReturned() {
@@ -660,6 +678,19 @@ final class DownloadStore {
         defer { isSyncing = false }
         let api = LibraryAPI(client: client, userID: userID)
         for record in records.values where record.needsSync && record.userID == userID {
+            if let marked = record.markedPlayed {
+                do {
+                    let data = try await api.setPlayed(marked, itemID: record.id)
+                    records[record.id]?.markedPlayed = nil
+                    records[record.id]?.needsSync = false
+                    records[record.id]?.item.userData = data
+                    save()
+                } catch {
+                    AppLog.shared.log("Couldn't send watched state: \(error.localizedDescription)", level: .warning)
+                    return
+                }
+                continue
+            }
             guard let position = record.position, let changed = record.progressUpdatedAt else { continue }
             do {
                 let server = try await api.item(record.id)

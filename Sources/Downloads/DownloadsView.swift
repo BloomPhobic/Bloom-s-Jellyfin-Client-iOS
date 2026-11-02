@@ -451,6 +451,12 @@ private struct DownloadedItemButton: View {
             }
         }
         .contextMenu {
+            Button {
+                DownloadStore.shared.setWatched(record.id, !record.isWatched)
+            } label: {
+                Label(record.isWatched ? "Mark unwatched" : "Mark watched",
+                      systemImage: record.isWatched ? "eye.slash" : "checkmark.circle")
+            }
             Button(role: .destructive) {
                 DownloadStore.shared.delete(record.id)
             } label: {
