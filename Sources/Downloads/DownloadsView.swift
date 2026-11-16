@@ -4,6 +4,8 @@ import SwiftUI
 /// The Downloads tab: storage, a link to what's downloading, then movies and shows on the phone.
 /// Works without a connection; tap anything to play it.
 struct DownloadsView: View {
+    /// Changes when the Downloads tab is tapped again; a new stack identity pops back to this page.
+    var resetToken = 0
     @Environment(SessionStore.self) private var store
     @State private var playback: PlaybackSession?
     @State private var freeBytes: Int64 = 0
@@ -44,6 +46,7 @@ struct DownloadsView: View {
             .tabBarClearance()
             .navigationTitle("Downloads")
         }
+        .id(resetToken)
         .onAppear { freeBytes = DownloadFiles.freeBytes }
         .onChange(of: mine.count) { freeBytes = DownloadFiles.freeBytes }
         .fullScreenCover(item: $playback) { session in

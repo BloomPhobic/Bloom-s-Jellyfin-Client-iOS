@@ -27,12 +27,16 @@ enum AppTab: Hashable, CaseIterable {
 }
 
 struct RootView: View {
+    /// Posted by the "Not connected" screen to jump to the Downloads tab.
+    static let openDownloadsNotification = Notification.Name("openDownloadsTab")
+
     @Environment(SessionStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @State private var didRunStartupChecks = false
     @State private var selection: AppTab = .home
     @State private var homeNavigator = BrowseNavigator()
     @State private var searchNavigator = BrowseNavigator()
+    @State private var downloadsReset = 0
 
     var body: some View {
         TabView(selection: $selection) {
@@ -54,7 +58,7 @@ struct RootView: View {
             .tabBarSpace()
             .tag(AppTab.search)
 
-            DownloadsView()
+            DownloadsView(resetToken: downloadsReset)
                 .tabBarSpace()
                 .tag(AppTab.downloads)
 
@@ -69,7 +73,8 @@ struct RootView: View {
                     switch tab {
                     case .home: homeNavigator.path = []
                     case .search: searchNavigator.path = []
-                    case .downloads, .settings: break
+                    case .downloads: downloadsReset += 1
+                    case .settings: break
                     }
                 }
             }
@@ -84,6 +89,9 @@ struct RootView: View {
             case .active: store.appDidBecomeActive()
             default: break
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Self.openDownloadsNotification)) { _ in
+            selection = .downloads
         }
         .onReceive(NotificationCenter.default.publisher(for: BrowseNavigator.openSeriesNotification)) { note in
             guard let id = note.userInfo?["id"] as? String else { return }

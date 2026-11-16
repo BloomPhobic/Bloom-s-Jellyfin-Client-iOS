@@ -96,39 +96,69 @@ struct AddServerView: View {
 /// Shown when none of the server's addresses answered on launch.
 struct ServerUnreachableView: View {
     @Environment(SessionStore.self) private var store
+    @State private var showDetails = false
 
     var body: some View {
-        List {
-            Section {
-                Label("Can't reach \(store.server?.name ?? "the server")", systemImage: "wifi.exclamationmark")
-                    .font(.headline)
-                Text("None of the server's addresses answered. Check your connection, and if you use Tailscale, that it is connected.")
-                    .foregroundStyle(.secondary)
-            }
+        ScrollView {
+            VStack(spacing: 16) {
+                Spacer(minLength: 60)
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                Text("Can't reach \(store.server?.name ?? "the server")")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .multilineTextAlignment(.center)
+                Text("Check your connection, and if you use Tailscale, that it is connected. Your downloads still work.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.text2)
+                    .multilineTextAlignment(.center)
 
-            Section("Addresses") {
-                ForEach(store.server?.addresses ?? [], id: \.self) { address in
-                    AddressRow(address: address, result: store.results[address], isChosen: false)
+                VStack(spacing: 10) {
+                    Button {
+                        NotificationCenter.default.post(name: RootView.openDownloadsNotification, object: nil)
+                    } label: {
+                        Label("Go to downloads", systemImage: "arrow.down.circle.fill")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(height: 50))
+                    Button {
+                        Task { await store.resolve() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("Try again")
+                            if store.isResolving {
+                                ProgressView()
+                            }
+                        }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .disabled(store.isResolving)
                 }
-            }
+                .padding(.top, 8)
 
-            Section {
-                Button {
-                    Task { await store.resolve() }
-                } label: {
-                    HStack {
-                        Text("Try again")
-                        if store.isResolving {
-                            Spacer()
-                            ProgressView()
+                DisclosureGroup("Details", isExpanded: $showDetails) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(store.server?.addresses ?? [], id: \.self) { address in
+                            AddressRow(address: address, result: store.results[address], isChosen: false)
                         }
                     }
+                    .padding(.top, 8)
                 }
-                .disabled(store.isResolving)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.text3)
+                .tint(Theme.text3)
+                .padding(.top, 12)
             }
+            .padding(.horizontal, 24)
+            .frame(maxWidth: 520)
+            .frame(maxWidth: .infinity)
         }
         .themedBackground()
-        .navigationTitle("Not connected")
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 

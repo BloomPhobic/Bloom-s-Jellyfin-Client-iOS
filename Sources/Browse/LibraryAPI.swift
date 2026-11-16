@@ -139,7 +139,20 @@ struct LibraryAPI {
         async let titles = search(term, types: [.series, .movie], limit: 40)
         async let episodes = search(term, types: [.episode], limit: 30)
         let shows = try await titles
-        let ordered = shows.filter { $0.type == .series } + shows.filter { $0.type != .series }
+        // Best title match first (exact, then starts with, then contains); shows before movies within each.
+        func rank(_ item: BaseItemDto) -> Int {
+            let name = (item.name ?? "").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            let query = term.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            if name == query { return 0 }
+            if name.hasPrefix(query) { return 1 }
+            if name.contains(query) { return 2 }
+            return 3
+        }
+        let ordered = shows.sorted { a, b in
+            let (ra, rb) = (rank(a), rank(b))
+            if ra != rb { return ra < rb }
+            return (a.type == .series) && (b.type != .series)
+        }
         return try await ordered + episodes
     }
 
