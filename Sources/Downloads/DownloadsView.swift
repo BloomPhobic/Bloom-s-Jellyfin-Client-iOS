@@ -4,11 +4,12 @@ import SwiftUI
 /// The Downloads tab: storage, a link to what's downloading, then movies and shows on the phone.
 /// Works without a connection; tap anything to play it.
 struct DownloadsView: View {
-    /// Changes when the Downloads tab is tapped again; a new stack identity pops back to this page.
+    /// Changes when the Downloads tab is tapped again: pops back to this page.
     var resetToken = 0
     @Environment(SessionStore.self) private var store
     @State private var playback: PlaybackSession?
     @State private var freeBytes: Int64 = 0
+    @State private var path: [DownloadsRoute] = []
 
     private var downloads: DownloadStore { .shared }
 
@@ -32,7 +33,7 @@ struct DownloadsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if store.session == nil {
                     DownloadsPlaceholder(icon: "person.crop.circle", title: "Not signed in", text: "Sign in on the Home tab to download movies and episodes.")
@@ -45,8 +46,16 @@ struct DownloadsView: View {
             .themedBackground()
             .tabBarClearance()
             .navigationTitle("Downloads")
+            .navigationDestination(for: DownloadsRoute.self) { route in
+                switch route {
+                case .active:
+                    ActiveDownloadsView()
+                case .show(let id, let name):
+                    ShowDownloadsView(seriesID: id, name: name, play: play)
+                }
+            }
         }
-        .id(resetToken)
+        .onChange(of: resetToken) { path = [] }
         .onAppear { freeBytes = DownloadFiles.freeBytes }
         .onChange(of: mine.count) { freeBytes = DownloadFiles.freeBytes }
         .fullScreenCover(item: $playback) { session in
@@ -65,9 +74,7 @@ struct DownloadsView: View {
                         .font(.footnote)
                         .foregroundStyle(Theme.text2)
                 }
-                NavigationLink {
-                    ActiveDownloadsView()
-                } label: {
+                NavigationLink(value: DownloadsRoute.active) {
                     ActiveDownloadsLink(records: mine.filter { $0.state != .done }, userID: store.session?.userID)
                 }
             }
@@ -91,9 +98,7 @@ struct DownloadsView: View {
             if !shows.isEmpty {
                 Section("Shows") {
                     ForEach(shows) { show in
-                        NavigationLink {
-                            ShowDownloadsView(seriesID: show.id, name: show.name, play: play)
-                        } label: {
+                        NavigationLink(value: DownloadsRoute.show(id: show.id, name: show.name)) {
                             ShowRow(show: show)
                         }
                         .swipeActions {
@@ -125,6 +130,11 @@ struct DownloadsView: View {
             playback = session
         }
     }
+}
+
+private enum DownloadsRoute: Hashable {
+    case active
+    case show(id: String, name: String)
 }
 
 /// A show's finished episodes, for the Downloads page.

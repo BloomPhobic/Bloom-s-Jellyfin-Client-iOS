@@ -102,6 +102,7 @@ final class MPVPlayer: PlaybackEngine {
             return
         }
         core = newCore
+        isLocalFile = url.isFileURL
         if !url.isFileURL {
             AppLog.shared.log("Read-ahead: up to \(Self.readAheadMegabytes) MB, kept on the phone")
         }

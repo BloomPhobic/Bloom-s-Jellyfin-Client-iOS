@@ -22,6 +22,7 @@ final class TrickplayThumbnails {
 
     private var tiles: [Int: CGImage] = [:]
     @ObservationIgnored private var requested: Set<Int> = []
+    @ObservationIgnored private var loggedCropFailure = false
 
     /// Nil when the server has no thumbnails for this video.
     init?(item: BaseItemDto, mediaSourceID: String?, client: JellyfinClient) {
@@ -68,7 +69,14 @@ final class TrickplayThumbnails {
         }
         let within = index % perTile
         let rect = CGRect(x: (within % columns) * width, y: (within / columns) * height, width: width, height: height)
-        return image.cropping(to: rect).map { UIImage(cgImage: $0) }
+        guard let cropped = image.cropping(to: rect) else {
+            if !loggedCropFailure {
+                loggedCropFailure = true
+                AppLog.shared.log("Preview crop failed: tile \(tile) is \(image.width)x\(image.height), wanted \(Int(rect.minX)),\(Int(rect.minY)) \(width)x\(height)", level: .warning)
+            }
+            return nil
+        }
+        return UIImage(cgImage: cropped)
     }
 
     /// Fetches every tile in the background, one after another, so scrubbing never waits.
@@ -88,6 +96,7 @@ final class TrickplayThumbnails {
         guard !requested.contains(tile) else { return }
         requested.insert(tile)
         do {
+            let started = Date()
             let request = Paths.getTrickplayTileImage(itemID: itemID, width: width, index: tile, mediaSourceID: mediaSourceID)
             let data = try await client.send(request).value
             let image = await Task.detached(priority: .utility) {
@@ -95,14 +104,16 @@ final class TrickplayThumbnails {
             }.value
             if let image {
                 tiles[tile] = image
+                if tile == 0 {
+                    AppLog.shared.log("Preview tile 0 loaded: \(image.width)x\(image.height) px (cells \(width)x\(height), \(columns)x\(rows)), \(data.count / 1024) KB in \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+                }
             } else {
                 requested.remove(tile)
+                AppLog.shared.log("Preview tile \(tile) isn't a picture (\(data.count) bytes)", level: .warning)
             }
         } catch {
             requested.remove(tile)
-            if tile == 0 {
-                AppLog.shared.log("Preview thumbnails didn't load: \(error.localizedDescription)", level: .warning)
-            }
+            AppLog.shared.log("Preview tile \(tile) didn't load: \(error.localizedDescription)", level: .warning)
         }
     }
 }
