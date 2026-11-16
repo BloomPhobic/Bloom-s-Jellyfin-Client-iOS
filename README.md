@@ -5,18 +5,19 @@ A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in
 **Status:** in daily use by the developer. Features:
 
 - Direct play through mpv (hardware decoding, HDR10 passthrough, ASS/PGS subtitles and external subtitle files, audio and subtitle track selection)
-- A full player: auto-hiding controls, skip intro and credits, play next episode automatically, an episode list and subtitle options inside the player, and watch progress synced to the server
+- A full player: auto-hiding controls, skip intro and credits, play next episode automatically, an episode list and a subtitle panel (track, size, style, timing) inside the player, and watch progress synced to the server
 - Playback speed (0.5× to 2×), and hold the left or right side of the screen to play faster (2× by default)
 - Chapters, preview pictures while scrubbing (when the server has made trickplay images), pinch to fill the screen, and lock screen and Control Center controls
 - Picture in picture: swipe home and the video carries on in a floating window
+- Bigger read-ahead for streaming: up to 1 GB kept on the phone (capped by free space), so slow patches on mobile data don't pause the video
 - Servers with several addresses (for example local network, Tailscale and a public domain): all are checked at the same time and the highest-priority one that answers is used, and they are checked again when the network changes. A new address is only saved once a Jellyfin server answers on it
 - Several accounts; sign in with the server's user list, a username and password, or Quick Connect; the sign-in is kept in the Keychain
 - Home screen with Continue watching, Next up, Recently added per library, watch history and library shortcuts
-- Library grids with sort and filters, show pages with seasons and episodes, cast and "More like this" rows, person pages, search (shows first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
-- Downloads: original files only (never transcoded), downloaded in the background, Wi-Fi only unless mobile data is allowed, played offline in the same player, with offline progress synced when the connection returns
+- Library grids with sort and filters, show pages with seasons and episodes, cast and "More like this" rows, person pages, search (best title match first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
+- Downloads: original files only (never transcoded), downloaded in the background, Wi-Fi only unless mobile data is allowed, played offline in the same player, with offline progress synced when the connection returns; long-press a download to mark it watched or unwatched, also offline
 - Accent colour setting
 
-Planned: an iPad layout, and lower-quality streaming away from home.
+Planned: an iPad layout. Lower-quality streaming and transcoding are deliberately not planned: the app only plays original files.
 
 ## Install
 
