@@ -20,6 +20,7 @@ struct SeriesView: View {
     @State private var isStartingPlayback = false
     @State private var downloadMessage: String?
     @State private var isQueueingSeason = false
+    @State private var isQueueingNext = false
     @State private var confirmRemoveSeason = false
 
     var body: some View {
@@ -172,6 +173,12 @@ struct SeriesView: View {
                     .padding(.top, 20)
             }
 
+            if showsDownloads, store.canDownload, let upNext {
+                nextDownloadsButton(from: upNext)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+            }
+
             if showsDownloads, !episodes.isEmpty {
                 seasonDownloadBar
                     .padding(.horizontal, 16)
@@ -284,6 +291,41 @@ struct SeriesView: View {
                 }
             }
         }
+    }
+
+    /// Saves the episode you're up to and the next two, skipping any already on the phone.
+    private func nextDownloadsButton(from start: BaseItemDto) -> some View {
+        Button {
+            Task {
+                isQueueingNext = true
+                defer { isQueueingNext = false }
+                let batch = (try? await api.episodes(startingAt: start, count: 3)) ?? []
+                for episode in batch {
+                    guard let id = episode.id, DownloadStore.shared.record(id) == nil else { continue }
+                    if let message = await DownloadStore.shared.download(itemID: id, api: api) {
+                        downloadMessage = message
+                        return
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if isQueueingNext {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                }
+                Text("Download next 3 unwatched")
+            }
+            .font(.system(size: 14, weight: .semibold))
+            .padding(.horizontal, 14)
+            .frame(height: 36)
+            .foregroundStyle(Theme.accent)
+            .background(Capsule().fill(Theme.raised))
+            .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(isQueueingNext)
     }
 
     private var seasonPills: some View {

@@ -190,6 +190,18 @@ struct LibraryAPI {
         return try await client.send(Paths.getEpisodes(seriesID: seriesID, parameters: parameters)).value.items ?? []
     }
 
+    /// This episode and the ones after it, crossing into the next season if needed.
+    func episodes(startingAt episode: BaseItemDto, count: Int) async throws -> [BaseItemDto] {
+        guard let seriesID = episode.seriesID, let id = episode.id else { return [] }
+        var parameters = Paths.GetEpisodesParameters()
+        parameters.userID = userID
+        parameters.startItemID = id
+        parameters.limit = count
+        parameters.isMissing = false
+        parameters.enableUserData = true
+        return try await client.send(Paths.getEpisodes(seriesID: seriesID, parameters: parameters)).value.items ?? []
+    }
+
     /// The episode after this one, crossing into the next season if needed.
     func nextEpisode(after episode: BaseItemDto) async throws -> BaseItemDto? {
         guard let seriesID = episode.seriesID, let id = episode.id else { return nil }

@@ -32,6 +32,10 @@ final class MPVPlayer: PlaybackEngine {
     /// Subtitle files that sit next to the video on the server (or in the download), added to
     /// the player once the video has loaded.
     @ObservationIgnored var externalSubtitles: [ExternalSubtitle] = []
+    /// Asked when a file has loaded, so it can use whatever the session knows by then.
+    @ObservationIgnored var languagePreference: () -> LanguagePreference = { .standard }
+    /// Set once the viewer picks a track by hand, so a late preference change doesn't override it.
+    @ObservationIgnored private var pickedTrackByHand = false
 
     let layer = MPVMetalLayer()
     @ObservationIgnored let pictureInPicture = PictureInPicture()
@@ -217,11 +221,13 @@ final class MPVPlayer: PlaybackEngine {
     }
 
     func selectAudio(_ id: Int) {
+        pickedTrackByHand = true
         core?.setString("aid", String(id))
         refreshTracks()
     }
 
     func selectSubtitle(_ id: Int?) {
+        pickedTrackByHand = true
         core?.setString("sid", id.map { String($0) } ?? "no")
         refreshTracks()
     }
@@ -322,6 +328,31 @@ final class MPVPlayer: PlaybackEngine {
         // Whole seconds only, so this doesn't redraw the player on every tiny change.
         let buffered = (core.double("demuxer-cache-duration") ?? 0).rounded(.down)
         if buffered != bufferedSeconds { bufferedSeconds = buffered }
+    }
+
+    /// Picks audio and subtitle tracks from the language wishes in Settings. Anything the video
+    /// doesn't have is left on the video's own default.
+    func applyLanguages(onlyIfUntouched: Bool = false) {
+        guard let core, !(onlyIfUntouched && pickedTrackByHand),
+              let count = core.string("track-list/count").flatMap({ Int($0) }) else { return }
+        let wishes = languagePreference()
+        var audio: [LanguagePreference.Track] = []
+        var subtitles: [LanguagePreference.Track] = []
+        for index in 0..<count {
+            let prefix = "track-list/\(index)/"
+            guard let type = core.string(prefix + "type"),
+                  let id = core.string(prefix + "id").flatMap({ Int($0) }) else { continue }
+            let track = LanguagePreference.Track(id: id, language: core.string(prefix + "lang"),
+                                                 isDefault: core.flag(prefix + "default"), isForced: core.flag(prefix + "forced"))
+            if type == "audio" { audio.append(track) } else if type == "sub" { subtitles.append(track) }
+        }
+        if let id = wishes.pickAudio(from: audio) {
+            core.setString("aid", String(id))
+        }
+        if let choice = wishes.pickSubtitle(from: subtitles) {
+            core.setString("sid", choice.map { String($0) } ?? "no")
+        }
+        refreshTracks()
     }
 
     private func refreshTracks() {
@@ -425,6 +456,8 @@ final class MPVPlayer: PlaybackEngine {
         case .fileLoaded:
             AppLog.shared.log("mpv: file loaded")
             addExternalSubtitles()
+            pickedTrackByHand = false
+            applyLanguages()
             refreshTracks()
             refreshState()
         case .endFile(let error):

@@ -98,6 +98,8 @@ final class PlaybackSession: Identifiable {
         reporter = offline ? nil : PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
         Self.logPlay(item: item, source: source, startSeconds: startSeconds, local: url.isFileURL)
         player.externalSubtitles = externalSubtitles(for: item, source: source)
+        let languageKey = LanguagePreference.key(for: item)
+        player.languagePreference = { LanguagePreference.effective(libraryID: LanguagePreference.rememberedLibrary(for: languageKey)) }
     }
 
     /// Subtitle files beside the video: the copies saved with a download, otherwise the server's.
@@ -149,8 +151,19 @@ final class PlaybackSession: Identifiable {
     // MARK: - Loading
 
     /// Loads the skip markers, the next episode and the season list for the current item.
+    /// Finds out which library this item is in (the first time only), since the language wishes
+    /// can differ per library. Applies them at once if the player started before this was known.
+    private func resolveLibrary() async {
+        guard !isOffline, let key = LanguagePreference.key(for: item), let itemID = item.id,
+              LanguagePreference.rememberedLibrary(for: key) == nil else { return }
+        guard let library = (try? await api.library(containing: itemID))?.id else { return }
+        LanguagePreference.remember(library: library, for: key)
+        player.applyLanguages(onlyIfUntouched: true)
+    }
+
     func loadExtras() async {
         guard let itemID = item.id else { return }
+        await resolveLibrary()
         await loadChapters()
         guard item.id == itemID else { return }
         if isOffline {

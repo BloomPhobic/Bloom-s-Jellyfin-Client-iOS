@@ -171,6 +171,14 @@ struct PlaybackSettingsView: View {
     var body: some View {
         List {
             Section {
+                NavigationLink("Languages") {
+                    LanguageSettingsView()
+                }
+            } footer: {
+                Text("Preferred audio and subtitle languages, for everything or per library.")
+            }
+
+            Section {
                 Toggle("Autoplay next episode", isOn: $autoplayNext)
             } footer: {
                 Text("Near the end of an episode, a card shows the next one. With autoplay on, it plays after a 10-second countdown; with it off, it waits for you to tap Play now.")
