@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   upload:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       # Apple registered the app under this ID (Team ID suffix). Only this workflow uses it;
@@ -16,6 +16,9 @@ jobs:
       BUNDLE_ID: io.github.bloomphobic.jellyfinclient.${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
 
       - name: Install XcodeGen and generate project
         run: |
