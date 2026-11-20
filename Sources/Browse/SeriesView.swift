@@ -144,15 +144,22 @@ struct SeriesView: View {
                     .padding(.vertical, 10)
                     .background(Capsule().fill(Theme.raised))
                     .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
-                    .padding(.bottom, 80)
+                    .padding(.bottom, Self.aboveTabBar)
+                    .ignoresSafeArea(edges: .bottom)
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay(alignment: .bottom) {
             if selecting {
                 selectionBar
+                    .padding(.bottom, Self.aboveTabBar)
+                    .ignoresSafeArea(edges: .bottom)
             }
+        }
+        // Lets the last episodes scroll clear of the selection bar.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: selecting ? 120 : 0)
         }
         .alert("Can't download", isPresented: Binding(get: { downloadMessage != nil }, set: { if !$0 { downloadMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -243,6 +250,14 @@ struct SeriesView: View {
                         }
                         .buttonStyle(PressableStyle())
                         .contextMenu {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selecting = true
+                                    selected = Set([episode.id].compactMap { $0 })
+                                }
+                            } label: {
+                                Label("Select", systemImage: "checklist")
+                            }
                             Button {
                                 Task { await togglePlayed(at: index) }
                             } label: {
@@ -354,6 +369,9 @@ struct SeriesView: View {
         }
     }
 
+    /// Distance from the screen's bottom edge to just above the floating tab bar.
+    private static let aboveTabBar: CGFloat = 112
+
     private func toggleSelection(_ episode: BaseItemDto) {
         guard let id = episode.id else { return }
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
@@ -392,9 +410,7 @@ struct SeriesView: View {
         .padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 18).fill(Theme.raised))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1))
-        // Transparent space below, so the card floats just above the tab bar.
         .padding(.horizontal, 16)
-        .padding(.bottom, 78)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
