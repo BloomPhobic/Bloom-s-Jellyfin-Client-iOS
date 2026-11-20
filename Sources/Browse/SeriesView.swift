@@ -22,6 +22,9 @@ struct SeriesView: View {
     @State private var isQueueingSeason = false
     @State private var isQueueingNext = false
     @State private var confirmRemoveSeason = false
+    @State private var selecting = false
+    @State private var selected: Set<String> = []
+    @State private var isApplying = false
 
     var body: some View {
         ScrollView {
@@ -63,6 +66,20 @@ struct SeriesView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if let series {
+                    if !episodes.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selecting.toggle()
+                                selected = []
+                            }
+                        } label: {
+                            Image(systemName: selecting ? "checkmark.circle.fill" : "checklist")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(selecting ? Theme.accent : Theme.text)
+                        }
+                        .buttonStyle(CircleButtonStyle(size: 36))
+                        .accessibilityLabel(selecting ? "Stop selecting" : "Select episodes")
+                    }
                     Button {
                         Task { await setFavorite(!series.isFavorite) }
                     } label: {
@@ -116,6 +133,11 @@ struct SeriesView: View {
         .fullScreenCover(item: $playback) { session in
             PlayerView(session: session)
                 .environment(store)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selecting {
+                selectionBar
+            }
         }
         .alert("Can't download", isPresented: Binding(get: { downloadMessage != nil }, set: { if !$0 { downloadMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -188,8 +210,21 @@ struct SeriesView: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                     HStack(spacing: 4) {
-                        NavigationLink(value: BrowseRoute.item(episode)) {
-                            EpisodeRow(episode: episode, api: api)
+                        Button {
+                            if selecting {
+                                toggleSelection(episode)
+                            } else {
+                                Task { await play(episode) }
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                if selecting {
+                                    Image(systemName: selected.contains(episode.id ?? "") ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 22))
+                                        .foregroundStyle(selected.contains(episode.id ?? "") ? Theme.accent : Theme.text3)
+                                }
+                                EpisodeRow(episode: episode, api: api)
+                            }
                         }
                         .buttonStyle(PressableStyle())
                         .contextMenu {
@@ -200,9 +235,20 @@ struct SeriesView: View {
                                       systemImage: episode.isPlayed ? "eye.slash" : "checkmark.circle")
                             }
                         }
-                        if showsDownloads, let id = episode.id {
-                            EpisodeDownloadButton(itemID: id, api: api, canDownload: store.canDownload) { message in
-                                downloadMessage = message
+                        if !selecting {
+                            NavigationLink(value: BrowseRoute.item(episode)) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(Theme.text2)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PressableStyle())
+                            .accessibilityLabel("Episode details")
+                            if showsDownloads, let id = episode.id {
+                                EpisodeDownloadButton(itemID: id, api: api, canDownload: store.canDownload) { message in
+                                    downloadMessage = message
+                                }
                             }
                         }
                     }
@@ -289,6 +335,88 @@ struct SeriesView: View {
                 } message: {
                     Text("They stay on the server; only the copies on this iPhone are deleted.")
                 }
+            }
+        }
+    }
+
+    private func toggleSelection(_ episode: BaseItemDto) {
+        guard let id = episode.id else { return }
+        if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+    }
+
+    /// Actions for the ticked episodes, above the tab bar.
+    private var selectionBar: some View {
+        let chosen = episodes.filter { selected.contains($0.id ?? "") }
+        let allSelected = !episodes.isEmpty && chosen.count == episodes.count
+        return VStack(spacing: 10) {
+            HStack {
+                Text(chosen.isEmpty ? "Tap episodes to select" : "\(chosen.count) selected")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text2)
+                Spacer()
+                Button(allSelected ? "None" : "All") {
+                    selected = allSelected ? [] : Set(episodes.compactMap(\.id))
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+            }
+            HStack(spacing: 8) {
+                selectionAction("Watched", "checkmark.circle") { await markSelected(chosen, played: true) }
+                selectionAction("Unwatched", "eye.slash") { await markSelected(chosen, played: false) }
+                if store.canDownload {
+                    selectionAction("Download", "arrow.down.circle") { await downloadSelected(chosen) }
+                }
+                selectionAction("Remove", "trash") {
+                    for episode in chosen {
+                        if let id = episode.id { DownloadStore.shared.delete(id) }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 96)
+        .background(Theme.raised.ignoresSafeArea())
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func selectionAction(_ title: String, _ icon: String, _ action: @escaping () async -> Void) -> some View {
+        Button {
+            Task {
+                isApplying = true
+                await action()
+                isApplying = false
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selecting = false
+                    selected = []
+                }
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 18))
+                Text(title).font(.system(size: 11, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(Theme.accent)
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(selected.isEmpty || isApplying)
+    }
+
+    private func markSelected(_ chosen: [BaseItemDto], played: Bool) async {
+        for episode in chosen {
+            guard let id = episode.id else { continue }
+            _ = try? await api.setPlayed(played, itemID: id)
+        }
+        await reloadAfterChange()
+    }
+
+    private func downloadSelected(_ chosen: [BaseItemDto]) async {
+        for episode in chosen {
+            guard let id = episode.id, DownloadStore.shared.record(id) == nil else { continue }
+            if let message = await DownloadStore.shared.download(itemID: id, api: api) {
+                downloadMessage = message
+                return
             }
         }
     }

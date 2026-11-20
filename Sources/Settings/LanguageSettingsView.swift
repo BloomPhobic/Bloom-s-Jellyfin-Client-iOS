@@ -5,6 +5,7 @@ import SwiftUI
 struct LanguageSettingsView: View {
     @Environment(SessionStore.self) private var store
     @State private var libraries: [BaseItemDto] = []
+    @State private var refresh = 0
 
     var body: some View {
         List {
@@ -23,13 +24,15 @@ struct LanguageSettingsView: View {
                                 LanguageEditorPage(title: library.name ?? "Library", libraryID: id)
                             } label: {
                                 LabeledContent(library.name ?? "Library",
-                                               value: LanguagePreference.custom(for: id) == nil ? "Default" : "Custom")
+                                               value: LanguagePreference.custom(for: id) == nil ? "Default languages" : "Own choice")
+                                    .id(refresh)
                             }
                         }
                     }
                 }
             }
         }
+        .onAppear { refresh += 1 }
         .themedBackground()
         .navigationTitle("Languages")
         .navigationBarTitleDisplayMode(.inline)

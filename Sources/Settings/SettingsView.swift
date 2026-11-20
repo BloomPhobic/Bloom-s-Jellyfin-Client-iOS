@@ -46,8 +46,14 @@ struct SettingsView: View {
                     } label: {
                         Label("Playback", systemImage: "play.rectangle")
                     }
+                    NavigationLink {
+                        LanguageSettingsView()
+                            .tabBarClearance()
+                    } label: {
+                        Label("Languages", systemImage: "character.bubble")
+                    }
                 } footer: {
-                    Text("Autoplay, picture in picture, playing when locked, HDR and decoding.")
+                    Text("Playback: autoplay, picture in picture, playing when locked, HDR and decoding. Languages: preferred audio and subtitles, for everything or per library.")
                 }
 
                 Section {
@@ -170,14 +176,6 @@ struct PlaybackSettingsView: View {
 
     var body: some View {
         List {
-            Section {
-                NavigationLink("Languages") {
-                    LanguageSettingsView()
-                }
-            } footer: {
-                Text("Preferred audio and subtitle languages, for everything or per library.")
-            }
-
             Section {
                 Toggle("Autoplay next episode", isOn: $autoplayNext)
             } footer: {
