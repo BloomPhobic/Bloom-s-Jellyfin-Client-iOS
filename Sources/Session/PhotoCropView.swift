@@ -82,12 +82,18 @@ struct PhotoCropView: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
-                .padding(.top, proxy.safeAreaInsets.top + 12)
+                .padding(.top, Self.topInset + 12)
             }
         }
         // One coordinate space for the picture, the dimming and the ring: the whole screen.
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+    }
+
+    /// Status-bar height: the proxy reports 0 here because the whole view ignores the safe area.
+    private static var topInset: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.keyWindow?.safeAreaInsets.top ?? 54
     }
 
     /// Scale at which the photo's short side exactly fills the window.
