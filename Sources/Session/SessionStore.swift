@@ -429,6 +429,35 @@ final class SessionStore {
         return client.url(with: Paths.getUserImage(parameters: parameters))
     }
 
+    // MARK: - Profile
+
+    /// Changes the current account's password. The saved sign-in is a token, so it stays valid.
+    func changePassword(current: String, new: String) async throws {
+        guard let client, let session else { throw SessionError.notConnected }
+        try await client.send(Paths.updateUserPassword(userID: session.userID, UpdateUserPassword(currentPw: current, newPw: new)))
+        AppLog.shared.log("Password changed for \(session.userName)")
+    }
+
+    /// Sets (JPEG data) or removes (nil) the current account's profile picture.
+    func setProfilePicture(_ jpeg: Data?) async throws {
+        guard let client, let session else { throw SessionError.notConnected }
+        if let jpeg {
+            // Jellyfin wants the picture base64-encoded in the body.
+            var request = Paths.postUserImage(userID: session.userID, jpeg.base64EncodedData())
+            request.headers = ["Content-Type": "image/jpeg"]
+            try await client.send(request)
+        } else {
+            try await client.send(Paths.deleteUserImage(userID: session.userID))
+        }
+        let user = try await client.send(Paths.getCurrentUser).value
+        if let index = accounts.firstIndex(where: { $0.userID == session.userID }) {
+            accounts[index].imageTag = user.primaryImageTag
+            saveAccounts()
+            self.session = accounts[index]
+        }
+        AppLog.shared.log(jpeg == nil ? "Profile picture removed" : "Profile picture changed (\(jpeg!.count / 1024) KB)")
+    }
+
     func isQuickConnectEnabled() async -> Bool {
         do {
             let data = try await loginClient().data(for: Paths.getQuickConnectEnabled).value

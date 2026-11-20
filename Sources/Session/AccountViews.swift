@@ -105,6 +105,14 @@ struct AccountsSection: View {
             } label: {
                 Label("Add account", systemImage: "person.badge.plus")
             }
+            if let current = store.session {
+                NavigationLink {
+                    ProfileView()
+                        .tabBarClearance()
+                } label: {
+                    Label("Picture and password for \(current.userName)", systemImage: "person.crop.circle")
+                }
+            }
         } header: {
             Text("Accounts")
         } footer: {
