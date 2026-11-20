@@ -35,9 +35,7 @@ struct DownloadsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if store.session == nil {
-                    DownloadsPlaceholder(icon: "person.crop.circle", title: "Not signed in", text: "Sign in on the Home tab to download movies and episodes.")
-                } else if mine.isEmpty {
+                if mine.isEmpty {
                     DownloadsPlaceholder(icon: "arrow.down.circle", title: "No downloads yet", text: "Tap Download on a movie or episode to watch it without a connection.")
                 } else {
                     list
@@ -117,14 +115,14 @@ struct DownloadsView: View {
     }
 
     private func play(_ record: DownloadRecord) {
-        guard let api = store.apiForDownloads() else { return }
+        guard let api = store.apiForDownloads(userID: record.userID) else { return }
         let source = record.item.mediaSources?.first { $0.id == record.mediaSourceID }
         let session = PlaybackSession(
             api: api,
             item: record.item,
             mediaSource: source,
             startSeconds: record.resumeSeconds,
-            offline: !store.isConnected
+            offline: !store.isConnected || store.session == nil
         )
         withTransaction(\.disablesAnimations, true) {
             playback = session

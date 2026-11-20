@@ -80,8 +80,14 @@ final class SessionStore {
 
     /// For playing downloads: the current connection, or (with no address answering) one built for
     /// the preferred address, so progress can be reported once it's back.
-    func apiForDownloads() -> LibraryAPI? {
-        guard let session else { return nil }
+    func apiForDownloads(userID: String) -> LibraryAPI? {
+        guard let session else {
+            // Signed out: nothing is sent anywhere (the player runs offline); progress is kept
+            // with the download and sent once that account signs in again.
+            let address = server?.addresses.first ?? "http://offline.invalid"
+            guard let url = URL(string: address) else { return nil }
+            return LibraryAPI(client: Self.makeClient(url: url, accessToken: nil, deviceID: Self.installDeviceID), userID: userID)
+        }
         if let client {
             return LibraryAPI(client: client, userID: session.userID)
         }

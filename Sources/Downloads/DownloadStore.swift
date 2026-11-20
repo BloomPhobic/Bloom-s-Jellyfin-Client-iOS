@@ -175,9 +175,10 @@ final class DownloadStore {
 
     // MARK: - Queries
 
-    /// The current account's downloads.
+    /// The current account's downloads; with nobody signed in, every download on the phone, so they
+    /// stay watchable without a login or a connection.
     func list(for userID: String?) -> [DownloadRecord] {
-        guard let userID else { return [] }
+        guard let userID else { return Array(records.values) }
         return records.values.filter { $0.userID == userID }
     }
 

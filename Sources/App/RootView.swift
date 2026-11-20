@@ -37,6 +37,7 @@ struct RootView: View {
     @State private var homeNavigator = BrowseNavigator()
     @State private var searchNavigator = BrowseNavigator()
     @State private var downloadsReset = 0
+    private let keyboard = KeyboardState.shared
 
     var body: some View {
         TabView(selection: $selection) {
@@ -67,6 +68,7 @@ struct RootView: View {
                 .tag(AppTab.settings)
         }
         .overlay(alignment: .bottom) {
+            if !keyboard.isVisible {
             FloatingTabBar(selection: $selection) { tab in
                 // Tapping the current tab again goes back to its first page.
                 withAnimation {
@@ -79,7 +81,10 @@ struct RootView: View {
                 }
             }
             .ignoresSafeArea(.keyboard)
+            .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: keyboard.isVisible)
         .overlay(alignment: .top) {
             StatusBanner()
         }
@@ -140,8 +145,36 @@ extension View {
     /// Blank space under a page, as tall as the floating tab bar, so the bar never covers the
     /// last items. Applied to every page (pushed pages don't inherit it from their stack).
     func tabBarClearance() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 84)
+        modifier(TabBarClearance())
+    }
+}
+
+/// Space under a page for the floating tab bar. While the keyboard is up the bar is hidden, so the
+/// space shrinks to a little room under the field being typed in.
+private struct TabBarClearance: ViewModifier {
+    private let keyboard = KeyboardState.shared
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: keyboard.isVisible ? 72 : 84)
+        }
+    }
+}
+
+/// Whether the on-screen keyboard is showing.
+@MainActor
+@Observable
+final class KeyboardState {
+    static let shared = KeyboardState()
+    private(set) var isVisible = false
+
+    private init() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { self.isVisible = true }
+        }
+        center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { self.isVisible = false }
         }
     }
 }

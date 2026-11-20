@@ -10,12 +10,18 @@ struct ProfileView: View {
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var pictureMessage: (text: String, isError: Bool)?
     @State private var isWorkingOnPicture = false
+    @State private var cropping: PhotoToCrop?
+    @State private var showPreview = false
 
     @State private var current = ""
     @State private var new = ""
     @State private var confirm = ""
     @State private var passwordMessage: (text: String, isError: Bool)?
     @State private var isChangingPassword = false
+
+    private var avatarURL: URL? {
+        store.session.flatMap { store.userImageURL(userID: $0.userID, tag: $0.imageTag) }
+    }
 
     private var canSubmitPassword: Bool {
         !new.isEmpty && new == confirm && !isChangingPassword
@@ -24,12 +30,17 @@ struct ProfileView: View {
     var body: some View {
         List {
             Section {
-                AccountAvatar(
-                    name: store.session?.userName ?? "?",
-                    imageURL: store.session.flatMap { store.userImageURL(userID: $0.userID, tag: $0.imageTag) },
-                    size: 104
-                )
-                .frame(maxWidth: .infinity)
+                Button {
+                    if avatarURL != nil {
+                        showPreview = true
+                    }
+                } label: {
+                    AccountAvatar(name: store.session?.userName ?? "?", imageURL: avatarURL, size: 104)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile picture")
+                .accessibilityHint(avatarURL == nil ? "" : "Shows it full screen")
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
@@ -104,12 +115,24 @@ struct ProfileView: View {
             Task {
                 defer { pickedPhoto = nil }
                 guard let data = try? await item.loadTransferable(type: Data.self),
-                      let jpeg = Self.squareJPEG(from: data) else {
+                      let image = UIImage(data: data) else {
                     pictureMessage = ("That picture couldn't be read.", true)
                     return
                 }
-                await update(jpeg)
+                cropping = PhotoToCrop(image: image)
             }
+        }
+        .fullScreenCover(item: $cropping) { photo in
+            PhotoCropView(image: photo.image) {
+                cropping = nil
+            } onDone: { square in
+                cropping = nil
+                guard let jpeg = square.jpegData(compressionQuality: 0.85) else { return }
+                Task { await update(jpeg) }
+            }
+        }
+        .fullScreenCover(isPresented: $showPreview) {
+            AvatarPreview(url: avatarURL) { showPreview = false }
         }
     }
 
@@ -148,25 +171,5 @@ struct ProfileView: View {
             return refused
         }
         return error.localizedDescription
-    }
-
-    /// The picture cropped to a centred square, at most 512 px, as JPEG.
-    private static func squareJPEG(from data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let side = min(image.size.width, image.size.height)
-        let target = min(side, 512)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: target, height: target), format: format)
-        let scale = target / side
-        return renderer.jpegData(withCompressionQuality: 0.85) { _ in
-            image.draw(in: CGRect(
-                x: -(image.size.width - side) / 2 * scale,
-                y: -(image.size.height - side) / 2 * scale,
-                width: image.size.width * scale,
-                height: image.size.height * scale
-            ))
-        }
     }
 }
