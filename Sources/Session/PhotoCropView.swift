@@ -29,7 +29,7 @@ struct PhotoCropView: View {
             let total = Self.baseScale(image, side: side) * zoom
 
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color.black
                 Image(uiImage: image)
                     .resizable()
                     .frame(width: image.size.width * total, height: image.size.height * total)
@@ -41,7 +41,6 @@ struct PhotoCropView: View {
                     path.addEllipse(in: cropRect)
                 }
                 .fill(Color.black.opacity(0.6), style: FillStyle(eoFill: true))
-                .ignoresSafeArea()
                 .allowsHitTesting(false)
                 Circle()
                     .strokeBorder(Color.white.opacity(0.85), lineWidth: 1.5)
@@ -83,9 +82,11 @@ struct PhotoCropView: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
+                .padding(.top, proxy.safeAreaInsets.top + 12)
             }
         }
+        // One coordinate space for the picture, the dimming and the ring: the whole screen.
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
     }
 
