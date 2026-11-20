@@ -25,6 +25,7 @@ struct SeriesView: View {
     @State private var selecting = false
     @State private var selected: Set<String> = []
     @State private var isApplying = false
+    @State private var toast: String?
 
     var body: some View {
         ScrollView {
@@ -133,6 +134,20 @@ struct SeriesView: View {
         .fullScreenCover(item: $playback) { session in
             PlayerView(session: session)
                 .environment(store)
+        }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Text(toast)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Theme.raised))
+                    .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
+                    .padding(.bottom, 100)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting {
@@ -367,25 +382,26 @@ struct SeriesView: View {
                     selectionAction("Download", "arrow.down.circle") { await downloadSelected(chosen) }
                 }
                 selectionAction("Remove", "trash") {
-                    for episode in chosen {
-                        if let id = episode.id { DownloadStore.shared.delete(id) }
-                    }
+                    let ids = chosen.compactMap(\.id).filter { DownloadStore.shared.record($0) != nil }
+                    ids.forEach { DownloadStore.shared.delete($0) }
+                    return ids.isEmpty ? "None of these are downloaded" : "Removed \(Self.count(ids.count, "download"))"
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 96)
+        .padding(.top, 10)
+        .padding(.bottom, 74)
         .background(Theme.raised.ignoresSafeArea())
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
-    private func selectionAction(_ title: String, _ icon: String, _ action: @escaping () async -> Void) -> some View {
+    private func selectionAction(_ title: String, _ icon: String, _ action: @escaping () async -> String?) -> some View {
         Button {
             Task {
                 isApplying = true
-                await action()
+                let message = await action()
                 isApplying = false
+                if let message { showToast(message) }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     selecting = false
                     selected = []
@@ -393,32 +409,48 @@ struct SeriesView: View {
             }
         } label: {
             VStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 18))
-                Text(title).font(.system(size: 11, weight: .semibold))
+                Image(systemName: icon).font(.system(size: 16))
+                Text(title).font(.system(size: 10, weight: .semibold))
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 38)
             .foregroundStyle(Theme.accent)
         }
         .buttonStyle(PressableStyle())
         .disabled(selected.isEmpty || isApplying)
     }
 
-    private func markSelected(_ chosen: [BaseItemDto], played: Bool) async {
-        for episode in chosen {
-            guard let id = episode.id else { continue }
-            _ = try? await api.setPlayed(played, itemID: id)
+    private static func count(_ n: Int, _ noun: String) -> String { n == 1 ? "1 \(noun)" : "\(n) \(noun)s" }
+
+    private func showToast(_ text: String) {
+        withAnimation(.easeInOut(duration: 0.2)) { toast = text }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.2)) { if toast == text { toast = nil } }
         }
-        await reloadAfterChange()
     }
 
-    private func downloadSelected(_ chosen: [BaseItemDto]) async {
+    private func markSelected(_ chosen: [BaseItemDto], played: Bool) async -> String? {
+        var done = 0
+        for episode in chosen {
+            guard let id = episode.id else { continue }
+            if (try? await api.setPlayed(played, itemID: id)) != nil { done += 1 }
+        }
+        await reloadAfterChange()
+        let what = played ? "marked watched" : "marked unwatched"
+        return done == chosen.count ? "\(Self.count(done, "episode")) \(what)" : "\(done) of \(chosen.count) \(what); the rest failed"
+    }
+
+    private func downloadSelected(_ chosen: [BaseItemDto]) async -> String? {
+        var queued = 0
         for episode in chosen {
             guard let id = episode.id, DownloadStore.shared.record(id) == nil else { continue }
             if let message = await DownloadStore.shared.download(itemID: id, api: api) {
                 downloadMessage = message
-                return
+                return nil
             }
+            queued += 1
         }
+        return queued == 0 ? "Already downloaded" : "Downloading \(Self.count(queued, "episode"))"
     }
 
     /// Saves the episode you're up to and the next two, skipping any already on the phone.
