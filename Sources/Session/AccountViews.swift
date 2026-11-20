@@ -66,57 +66,86 @@ struct AccountMenu: View {
     }
 }
 
-/// Settings section listing the accounts: tap to switch, swipe to sign one out, add another.
+/// Settings: the account in use as a card (picture and password inside), then the other accounts
+/// to switch to, and Add account.
 struct AccountsSection: View {
     @Environment(SessionStore.self) private var store
 
+    private var others: [SessionStore.SavedSession] {
+        store.accounts.filter { $0.userID != store.session?.userID }
+    }
+
     var body: some View {
-        Section {
-            ForEach(store.accounts) { account in
-                let isCurrent = account.userID == store.session?.userID
-                Button {
-                    store.switchAccount(to: account)
-                } label: {
-                    HStack(spacing: 12) {
-                        AccountAvatar(
-                            name: account.userName,
-                            imageURL: store.userImageURL(userID: account.userID, tag: account.imageTag),
-                            size: 34,
-                            isSelected: isCurrent
-                        )
-                        Text(account.userName)
-                            .foregroundStyle(Theme.text)
-                        Spacer()
-                        if isCurrent {
-                            Text("Current")
+        Group {
+            if let current = store.session {
+                Section {
+                    NavigationLink {
+                        ProfileView()
+                            .tabBarClearance()
+                    } label: {
+                        HStack(spacing: 14) {
+                            AccountAvatar(
+                                name: current.userName,
+                                imageURL: store.userImageURL(userID: current.userID, tag: current.imageTag),
+                                size: 52,
+                                isSelected: true
+                            )
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(current.userName)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                Text("Picture and password")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Theme.text3)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .swipeActions {
+                        Button("Sign out", role: .destructive) {
+                            Task { await store.remove(current) }
+                        }
+                    }
+                } header: {
+                    Text("Signed in as")
+                }
+            }
+
+            Section {
+                ForEach(others) { account in
+                    Button {
+                        store.switchAccount(to: account)
+                    } label: {
+                        HStack(spacing: 12) {
+                            AccountAvatar(
+                                name: account.userName,
+                                imageURL: store.userImageURL(userID: account.userID, tag: account.imageTag),
+                                size: 34
+                            )
+                            Text(account.userName)
+                                .foregroundStyle(Theme.text)
+                            Spacer()
+                            Text("Switch")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Theme.accent)
                         }
                     }
-                }
-                .swipeActions {
-                    Button("Sign out", role: .destructive) {
-                        Task { await store.remove(account) }
+                    .swipeActions {
+                        Button("Sign out", role: .destructive) {
+                            Task { await store.remove(account) }
+                        }
                     }
                 }
-            }
-            Button {
-                store.isAddingAccount = true
-            } label: {
-                Label("Add account", systemImage: "person.badge.plus")
-            }
-            if let current = store.session {
-                NavigationLink {
-                    ProfileView()
-                        .tabBarClearance()
+                Button {
+                    store.isAddingAccount = true
                 } label: {
-                    Label("Picture and password for \(current.userName)", systemImage: "person.crop.circle")
+                    Label("Add account", systemImage: "person.badge.plus")
                 }
+            } header: {
+                Text(others.isEmpty ? "Accounts" : "Other accounts")
+            } footer: {
+                Text("Swipe an account to sign it out. Each account keeps its own watch progress.")
             }
-        } header: {
-            Text("Accounts")
-        } footer: {
-            Text("Swipe an account to sign it out. Each account keeps its own watch progress.")
         }
     }
 }

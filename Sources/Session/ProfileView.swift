@@ -24,16 +24,17 @@ struct ProfileView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Spacer()
-                    AccountAvatar(
-                        name: store.session?.userName ?? "?",
-                        imageURL: store.session.flatMap { store.userImageURL(userID: $0.userID, tag: $0.imageTag) },
-                        size: 96
-                    )
-                    Spacer()
-                }
+                AccountAvatar(
+                    name: store.session?.userName ?? "?",
+                    imageURL: store.session.flatMap { store.userImageURL(userID: $0.userID, tag: $0.imageTag) },
+                    size: 104
+                )
+                .frame(maxWidth: .infinity)
                 .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+            }
+
+            Section {
                 PhotosPicker(selection: $pickedPhoto, matching: .images) {
                     Label(isWorkingOnPicture ? "Uploading…" : "Choose a new picture", systemImage: "photo")
                 }
@@ -44,8 +45,6 @@ struct ProfileView: View {
                     }
                     .disabled(isWorkingOnPicture)
                 }
-            } header: {
-                Text("Profile picture")
             } footer: {
                 if let pictureMessage {
                     Text(pictureMessage.text)
@@ -62,29 +61,38 @@ struct ProfileView: View {
                     .textContentType(.newPassword)
                 SecureField("Repeat new password", text: $confirm)
                     .textContentType(.newPassword)
-                Button {
-                    Task { await changePassword() }
-                } label: {
-                    HStack {
-                        Text("Change password")
-                        if isChangingPassword {
-                            Spacer()
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(!canSubmitPassword)
             } header: {
                 Text("Password")
             } footer: {
-                if let passwordMessage {
-                    Text(passwordMessage.text)
-                        .foregroundStyle(passwordMessage.isError ? Color.red : Color.secondary)
-                } else if !confirm.isEmpty && new != confirm {
+                if !confirm.isEmpty && new != confirm {
                     Text("The new passwords don't match.")
                         .foregroundStyle(Color.red)
                 } else {
                     Text("Leave the current password empty if the account has none. Other devices stay signed in.")
+                }
+            }
+
+            Section {
+                Button {
+                    Task { await changePassword() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Change password")
+                        if isChangingPassword {
+                            ProgressView()
+                                .tint(Theme.onAccent)
+                        }
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle(height: 48))
+                .opacity(canSubmitPassword ? 1 : 0.4)
+                .disabled(!canSubmitPassword)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            } footer: {
+                if let passwordMessage {
+                    Text(passwordMessage.text)
+                        .foregroundStyle(passwordMessage.isError ? Color.red : Color.secondary)
                 }
             }
         }
