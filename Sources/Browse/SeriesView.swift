@@ -144,7 +144,7 @@ struct SeriesView: View {
                     .padding(.vertical, 10)
                     .background(Capsule().fill(Theme.raised))
                     .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
-                    .padding(.bottom, 100)
+                    .padding(.bottom, 80)
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
@@ -388,10 +388,13 @@ struct SeriesView: View {
                 }
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Theme.raised))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1))
+        // Transparent space below, so the card floats just above the tab bar.
         .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 74)
-        .background(Theme.raised.ignoresSafeArea())
+        .padding(.bottom, 78)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
