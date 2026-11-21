@@ -20,7 +20,7 @@ struct LibraryView: View {
     @State private var searchTerm = ""
 
     private static let pageSize = 100
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3)
+    private let columns = [GridItem(.adaptive(minimum: 105), spacing: 12, alignment: .top)]
 
     init(api: LibraryAPI, parent: BaseItemDto, genre: String? = nil) {
         self.api = api

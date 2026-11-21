@@ -149,7 +149,7 @@ struct SimilarRow: View {
                             ForEach(items, id: \.id) { similar in
                                 NavigationLink(value: BrowseRoute.item(similar)) {
                                     PosterCard(item: similar, api: api)
-                                        .frame(width: 108)
+                                        .frame(width: 108 * Metrics.scale)
                                 }
                                 .buttonStyle(PressableStyle())
                             }
@@ -184,7 +184,7 @@ struct PersonView: View {
     @State private var hasLoaded = false
     @State private var errorMessage: String?
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3)
+    private let columns = [GridItem(.adaptive(minimum: 105), spacing: 12, alignment: .top)]
 
     var body: some View {
         ScrollView {
@@ -227,7 +227,7 @@ struct PersonView: View {
     private func header(_ person: BaseItemDto) -> some View {
         HStack(spacing: 16) {
             PersonPhoto(url: api.imageURL(Artwork.poster(person), maxWidth: 300))
-                .frame(width: 104, height: 104)
+                .frame(width: 104 * Metrics.scale, height: 104 * Metrics.scale)
             VStack(alignment: .leading, spacing: 4) {
                 Text(person.name ?? "")
                     .font(.system(size: 24, weight: .bold))

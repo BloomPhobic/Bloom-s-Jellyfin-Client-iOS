@@ -270,7 +270,7 @@ struct HomeView: View {
         let detail = [isEpisode ? item.name : nil, Self.timeLeft(item)].compactMap { $0 }.joined(separator: " · ")
 
         return Color.clear
-            .frame(height: 236)
+            .frame(height: 236 * Metrics.scale)
             .overlay {
                 RemoteImage(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1000))
             }
@@ -376,10 +376,10 @@ struct HomeView: View {
                         NavigationLink(value: BrowseRoute.item(item)) {
                             if wide {
                                 LandscapeCard(item: item, api: api)
-                                    .frame(width: 224)
+                                    .frame(width: 224 * Metrics.scale)
                             } else {
                                 PosterCard(item: item, api: api)
-                                    .frame(width: 108)
+                                    .frame(width: 108 * Metrics.scale)
                             }
                         }
                         .buttonStyle(PressableStyle())
@@ -481,7 +481,7 @@ private struct LibraryCard: View {
 
     var body: some View {
         Color.clear
-            .frame(width: 210, height: 118)
+            .frame(width: 210 * Metrics.scale, height: 118 * Metrics.scale)
             .overlay {
                 RemoteImage(url: imageURL)
             }

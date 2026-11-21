@@ -171,7 +171,7 @@ struct SeriesView: View {
     @ViewBuilder
     private func content(_ series: BaseItemDto) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            BackdropHeader(url: api.imageURL(Artwork.backdrop(series) ?? Artwork.landscape(series), maxWidth: 1200), height: 250)
+            BackdropHeader(url: api.imageURL(Artwork.backdrop(series) ?? Artwork.landscape(series), maxWidth: 1200), height: 250 * Metrics.scale)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(series.name ?? "")
@@ -183,6 +183,7 @@ struct SeriesView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, -24)
+            .readableWidth()
 
             VStack(alignment: .leading, spacing: 14) {
                 if let upNext {
@@ -211,6 +212,7 @@ struct SeriesView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
+            .readableWidth()
 
             if seasons.count > 1 {
                 seasonPills
@@ -221,12 +223,14 @@ struct SeriesView: View {
                 nextDownloadsButton(from: upNext)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
+                    .readableWidth()
             }
 
             if showsDownloads, !episodes.isEmpty {
                 seasonDownloadBar
                     .padding(.horizontal, 16)
                     .padding(.top, seasons.count > 1 ? 14 : 22)
+                    .readableWidth()
             }
 
             LazyVStack(alignment: .leading, spacing: 12) {
@@ -288,6 +292,7 @@ struct SeriesView: View {
             .transition(.opacity)
             .padding(.horizontal, 16)
             .padding(.top, showsDownloads && !episodes.isEmpty ? 12 : (seasons.count > 1 ? 14 : 22))
+            .readableWidth()
 
             VStack(alignment: .leading, spacing: 24) {
                 CastRow(item: series, api: api)
@@ -701,7 +706,7 @@ private struct EpisodeRow: View {
                     ProgressOverlay(item: episode)
                 }
             }
-            .frame(width: 132)
+            .frame(width: 132 * Metrics.scale)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))

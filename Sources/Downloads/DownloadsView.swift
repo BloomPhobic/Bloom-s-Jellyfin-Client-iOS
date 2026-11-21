@@ -610,7 +610,7 @@ private struct DownloadArtwork: View {
         // Read so the row redraws once the artwork has been saved.
         let _ = downloads.artworkRevision
         ArtworkFrame(url: downloads.stillURL(record.id) ?? downloads.posterURL(record.id), aspectRatio: 16 / 9, cornerRadius: 8)
-            .frame(width: 104)
+            .frame(width: 104 * Metrics.scale)
             .id(downloads.artworkRevision)
     }
 }

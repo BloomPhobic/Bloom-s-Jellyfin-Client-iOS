@@ -80,12 +80,12 @@ struct ItemDetailView: View {
     private func content(_ item: BaseItemDto) -> some View {
         let isEpisode = item.type == .episode
         VStack(alignment: .leading, spacing: 0) {
-            BackdropHeader(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1200), height: 300)
+            BackdropHeader(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1200), height: 300 * Metrics.scale)
 
             HStack(alignment: .bottom, spacing: 14) {
                 if !isEpisode {
                     ArtworkFrame(url: api.imageURL(Artwork.poster(item), maxWidth: 300), aspectRatio: 2 / 3)
-                        .frame(width: 108)
+                        .frame(width: 108 * Metrics.scale)
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                         .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
                 }
@@ -106,6 +106,7 @@ struct ItemDetailView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, isEpisode ? -36 : -72)
+            .readableWidth()
 
             VStack(alignment: .leading, spacing: 14) {
                 playSection(item)
@@ -128,6 +129,7 @@ struct ItemDetailView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
+            .readableWidth()
 
             VStack(alignment: .leading, spacing: 24) {
                 CastRow(item: item, api: api)
