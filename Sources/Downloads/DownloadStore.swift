@@ -324,7 +324,7 @@ final class DownloadStore {
         }
 
         let fileExtension = Self.fileExtension(for: source)
-        let record = DownloadRecord(
+        var record = DownloadRecord(
             id: itemID,
             userID: api.userID,
             serverID: item.serverID,
@@ -345,7 +345,6 @@ final class DownloadStore {
         )
         try? FileManager.default.removeItem(at: DownloadFiles.folder(itemID))
         try? FileManager.default.createDirectory(at: DownloadFiles.folder(itemID), withIntermediateDirectories: true)
-        var record = record
         if let session = sessionStore?.session, session.userID == api.userID { record.userName = session.userName }
         records[itemID] = record
         save()
