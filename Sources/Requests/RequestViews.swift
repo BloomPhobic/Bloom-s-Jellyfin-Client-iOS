@@ -326,8 +326,9 @@ struct RequestDetailView: View {
     /// Year, length or seasons, and the TMDB score.
     private var facts: String {
         var parts: [String] = []
-        if let year = (detail?.releaseDate ?? detail?.firstAirDate ?? result.releaseDate ?? result.firstAirDate).flatMap({ $0.count >= 4 ? String($0.prefix(4)) : nil }) {
-            parts.append(year)
+        let dates: [String?] = [detail?.releaseDate, detail?.firstAirDate, result.releaseDate, result.firstAirDate]
+        if let date = dates.compactMap({ $0 }).first(where: { $0.count >= 4 }) {
+            parts.append(String(date.prefix(4)))
         }
         if result.mediaType == "tv" {
             if let n = detail?.numberOfSeasons { parts.append(n == 1 ? "1 season" : "\(n) seasons") }
