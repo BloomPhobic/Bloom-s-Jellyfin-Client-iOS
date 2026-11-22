@@ -10,12 +10,24 @@ struct SearchView: View {
     @State private var searchedTerm = ""
     @State private var isSearching = false
     @State private var errorMessage: String?
+    @AppStorage(SeerrClient.urlKey) private var seerrURL = ""
+
+    private var requestsOn: Bool { ServerProbe.normalize(seerrURL) != nil }
 
     var body: some View {
         List {
             ForEach(results, id: \.id) { item in
                 NavigationLink(value: BrowseRoute.item(item)) {
                     SearchRow(item: item, api: api)
+                }
+                .listRowBackground(Color.clear)
+            }
+            if requestsOn, !results.isEmpty {
+                NavigationLink {
+                    RequestSearchView(term: query.trimmingCharacters(in: .whitespacesAndNewlines)).tabBarClearance()
+                } label: {
+                    Label("Can't find it? Request it", systemImage: "plus.circle")
+                        .foregroundStyle(Theme.accent)
                 }
                 .listRowBackground(Color.clear)
             }
@@ -29,7 +41,21 @@ struct SearchView: View {
             } else if let errorMessage {
                 ContentUnavailableView("Search failed", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
             } else if results.isEmpty && !isSearching && searchedTerm == term {
-                ContentUnavailableView.search(text: term)
+                if requestsOn {
+                    ContentUnavailableView {
+                        Label("No results for “\(term)”", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("It isn't on the server.")
+                    } actions: {
+                        NavigationLink("Request it") {
+                            RequestSearchView(term: term).tabBarClearance()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.accent)
+                    }
+                } else {
+                    ContentUnavailableView.search(text: term)
+                }
             }
         }
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Movies, shows and episodes")

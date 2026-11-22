@@ -52,8 +52,14 @@ struct SettingsView: View {
                     } label: {
                         Label("Languages", systemImage: "character.bubble")
                     }
+                    NavigationLink {
+                        SeerrSettingsView()
+                            .tabBarClearance()
+                    } label: {
+                        Label("Requests", systemImage: "tray.and.arrow.down")
+                    }
                 } footer: {
-                    Text("Playback: autoplay, picture in picture, playing when locked, HDR and decoding. Languages: preferred audio and subtitles, for everything or per library.")
+                    Text("Playback: autoplay, picture in picture, playing when locked, HDR and decoding. Languages: preferred audio and subtitles, for everything or per library. Requests: ask for movies and shows that aren't on the server yet.")
                 }
 
                 Section {
