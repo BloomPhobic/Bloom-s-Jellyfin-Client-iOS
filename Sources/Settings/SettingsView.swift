@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    /// Changes when the Settings tab is tapped again: back to the first page.
-    var resetToken = 0
     @Environment(SessionStore.self) private var store
     @State private var imageCacheBytes = 0
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
@@ -140,7 +138,6 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear { imageCacheBytes = ImageCache.shared.diskUsage }
         }
-        .id(resetToken)
     }
 
     private var accentSwatches: some View {

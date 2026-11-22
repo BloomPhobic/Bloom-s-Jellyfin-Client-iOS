@@ -43,7 +43,6 @@ struct RootView: View {
     @State private var homeNavigator = BrowseNavigator()
     @State private var searchNavigator = BrowseNavigator()
     @State private var downloadsReset = 0
-    @State private var settingsReset = 0
     @State private var homeScrollTop = 0
     private let keyboard = KeyboardState.shared
 
@@ -73,7 +72,7 @@ struct RootView: View {
                 .tabBarSpace()
                 .tag(AppTab.downloads)
 
-            SettingsView(resetToken: settingsReset)
+            SettingsView()
                 .tabBarSpace()
                 .tag(AppTab.settings)
 
@@ -94,7 +93,7 @@ struct RootView: View {
                         homeScrollTop += 1
                     case .search: searchNavigator.path = []
                     case .downloads: downloadsReset += 1
-                    case .settings: settingsReset += 1
+                    case .settings: Self.popToRootOfSelectedTab()
                     case .admin: break
                     }
                 }
@@ -146,6 +145,21 @@ struct RootView: View {
             DownloadStore.shared.attach(store)
             await store.start()
         }
+    }
+
+    /// Back to the first page of the tab on screen, through UIKit (rebuilding the stack crashed).
+    private static func popToRootOfSelectedTab() {
+        func navigationController(in controller: UIViewController?) -> UINavigationController? {
+            guard let controller else { return nil }
+            if let nav = controller as? UINavigationController { return nav }
+            if let tabs = controller as? UITabBarController, let found = navigationController(in: tabs.selectedViewController) { return found }
+            for child in controller.children {
+                if let found = navigationController(in: child) { return found }
+            }
+            return nil
+        }
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow
+        navigationController(in: window?.rootViewController)?.popToRootViewController(animated: true)
     }
 
     private func logStartupInfo() {
