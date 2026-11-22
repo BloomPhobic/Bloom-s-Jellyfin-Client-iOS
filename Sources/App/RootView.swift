@@ -27,7 +27,7 @@ enum AppTab: Hashable, CaseIterable {
         case .search: return "magnifyingglass"
         case .downloads: return selected ? "arrow.down.circle.fill" : "arrow.down.circle"
         case .settings: return selected ? "gearshape.fill" : "gearshape"
-        case .admin: return selected ? "checkmark.shield.fill" : "checkmark.shield"
+        case .admin: return "shield.fill"
         }
     }
 }
@@ -221,19 +221,16 @@ private struct FloatingTabBar: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { selection = .admin }
             }
         } label: {
-            VStack(spacing: 3) {
-                Image(systemName: AppTab.admin.icon(selected: isSelected))
-                    .font(.system(size: 19, weight: .semibold))
-                    .symbolEffect(.bounce, value: bounces[.admin, default: 0])
-                Text("Admin").font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.text3)
-            .frame(width: 64, height: 64)
-            .background(Circle().fill(isSelected ? Theme.accent.opacity(0.15) : .clear))
-            .padding(5)
-            .background(Circle().fill(Theme.raised2.opacity(0.96)))
-            .overlay(Circle().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
-            .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
+            Image(systemName: "shield.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .symbolEffect(.bounce, value: bounces[.admin, default: 0])
+                .foregroundStyle(isSelected ? Theme.accent : Theme.text3)
+                .frame(width: 54, height: 54)
+                .background(Circle().fill(isSelected ? Theme.accent.opacity(0.15) : .clear))
+                .padding(5)
+                .background(Circle().fill(Theme.raised2.opacity(0.96)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+                .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Admin")
@@ -279,7 +276,7 @@ private struct FloatingTabBar: View {
             }
         }
         .padding(5)
-        .frame(width: showsAdmin ? 270 : 352)
+        .frame(width: showsAdmin ? 290 : 352)
         .background(Capsule().fill(Theme.raised2.opacity(0.96)))
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
         .shadow(color: .black.opacity(0.45), radius: 18, y: 8)

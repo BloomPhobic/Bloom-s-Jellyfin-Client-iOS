@@ -443,7 +443,7 @@ final class SessionStore {
 
     /// One call to the Jellyfin server as the signed-in account (admin pages). Returns the body.
     func adminCall(_ path: String, method: String = "GET") async throws -> Data {
-        guard let session, let route, let url = URL(string: route.address)?.appending(path: path) else {
+        guard let session, let route, let url = URL(string: route.address.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/" + path) else {
             throw SessionError.notConnected
         }
         var request = URLRequest(url: url)

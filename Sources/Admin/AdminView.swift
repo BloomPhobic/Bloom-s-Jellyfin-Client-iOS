@@ -1,77 +1,78 @@
 import SwiftUI
 
-/// Admins only: server facts, scan/restart, and the Seerr requests waiting for an answer.
+/// Admins only: server facts, per-library scan, who is watching, and the Seerr requests waiting for an answer.
 struct AdminView: View {
     @Environment(SessionStore.self) private var store
-    @State private var info: Info?
-    @State private var errorMessage: String?
+    @State private var server = ServerInfo()
+    @State private var libraries: [Library] = []
+    @State private var watching: [Watcher] = []
     @State private var pending: [SeerrMyRequest] = []
     @State private var pendingNote: String?
+    @State private var errorMessage: String?
     @State private var message: String?
     @State private var confirmRestart = false
+    @State private var scanning: Set<String> = []
 
-    private struct Info {
-        var name = ""
+    private struct ServerInfo {
+        var name = "Server"
         var version = ""
         var movies = 0
         var series = 0
         var episodes = 0
     }
 
+    private struct Library: Identifiable {
+        let id: String
+        let name: String
+        let type: String
+        var count: Int?
+
+        var icon: String {
+            switch type {
+            case "movies": return "film.fill"
+            case "tvshows": return "tv.fill"
+            case "music": return "music.note"
+            case "books": return "book.fill"
+            default: return "folder.fill"
+            }
+        }
+
+        var unit: String {
+            switch type {
+            case "movies": return "movies"
+            case "tvshows": return "shows"
+            default: return "items"
+            }
+        }
+    }
+
+    private struct Watcher: Identifiable {
+        let id: String
+        let user: String
+        let title: String
+        let device: String
+        let paused: Bool
+    }
+
     private var seerr: SeerrClient? { SeerrClient(userID: store.session?.userID) }
+    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
         NavigationStack {
-            List {
-                if let errorMessage {
-                    Section { Text(errorMessage).foregroundStyle(Theme.text2) }
-                }
-                if let info {
-                    Section {
-                        LabeledContent("Server", value: info.name)
-                        LabeledContent("Version", value: info.version)
-                        LabeledContent("Movies", value: "\(info.movies)")
-                        LabeledContent("Shows", value: "\(info.series)")
-                        LabeledContent("Episodes", value: "\(info.episodes)")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+                    if let errorMessage {
+                        Text(errorMessage).font(.system(size: 14)).foregroundStyle(Theme.text2)
                     }
+                    actions
+                    stats
+                    librariesSection
+                    if !watching.isEmpty { watchingSection }
+                    requestsSection
                 }
-                Section {
-                    Button("Scan library") { Task { await scan() } }
-                    Button("Restart server", role: .destructive) { confirmRestart = true }
-                        .confirmationDialog("Restart the server?", isPresented: $confirmRestart, titleVisibility: .visible) {
-                            Button("Restart", role: .destructive) { Task { await restart() } }
-                        } message: {
-                            Text("Everyone watching is cut off until it is back.")
-                        }
-                }
-                Section("Pending requests") {
-                    if let pendingNote {
-                        Text(pendingNote).foregroundStyle(Theme.text2)
-                    } else if pending.isEmpty {
-                        Text("Nothing waiting.").foregroundStyle(Theme.text2)
-                    }
-                    ForEach(pending) { request in
-                        HStack(spacing: 12) {
-                            ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3).frame(width: 44)
-                            Text(request.title)
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                                .lineLimit(2)
-                            Spacer()
-                            Button { Task { await answer(request, approve: true) } } label: {
-                                Image(systemName: "checkmark.circle.fill").font(.system(size: 28)).foregroundStyle(.green)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Approve")
-                            Button { Task { await answer(request, approve: false) } } label: {
-                                Image(systemName: "xmark.circle.fill").font(.system(size: 28)).foregroundStyle(.red)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Decline")
-                        }
-                        .listRowBackground(Color.clear)
-                    }
-                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
             .themedBackground()
             .tabBarClearance()
@@ -82,26 +83,226 @@ struct AdminView: View {
         }
     }
 
+    // MARK: Pieces
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "server.rack")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(Theme.accent.opacity(0.15)))
+                .overlay(alignment: .bottomTrailing) {
+                    Circle().fill(errorMessage == nil ? Color.green : Color.orange)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(Theme.background, lineWidth: 2))
+                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(server.name).font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.text)
+                Text(server.version.isEmpty ? " " : "Jellyfin \(server.version)")
+                    .font(.system(size: 13)).foregroundStyle(Theme.text3)
+            }
+            Spacer()
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 12) {
+            pill("Scan all", "arrow.triangle.2.circlepath") { Task { await scan(id: nil, name: "all libraries") } }
+            pill("Restart", "power") { confirmRestart = true }
+        }
+        .confirmationDialog("Restart the server?", isPresented: $confirmRestart, titleVisibility: .visible) {
+            Button("Restart", role: .destructive) { Task { await restart() } }
+        } message: {
+            Text("Everyone watching is cut off until it is back.")
+        }
+    }
+
+    private func pill(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(Capsule().fill(Theme.raised))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var stats: some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            tile("Movies", "\(server.movies)", "film.fill", .pink)
+            tile("Shows", "\(server.series)", "tv.fill", .indigo)
+            tile("Episodes", "\(server.episodes)", "play.rectangle.fill", .teal)
+            tile("Pending requests", "\(pending.count)", "tray.fill", .orange)
+        }
+    }
+
+    private func tile(_ title: String, _ value: String, _ icon: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon).foregroundStyle(color)
+                Spacer()
+                Text(value).font(.system(size: 26, weight: .bold)).foregroundStyle(color)
+            }
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text3)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
+    }
+
+    private var librariesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Libraries")
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(libraries) { library in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Image(systemName: library.icon).foregroundStyle(Theme.accent)
+                            Spacer()
+                            Button {
+                                Task { await scan(id: library.id, name: library.name) }
+                            } label: {
+                                if scanning.contains(library.id) {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.clockwise").foregroundStyle(Theme.text2)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Scan \(library.name)")
+                        }
+                        Text(library.name).font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(library.count.map { "\($0) \(library.unit)" } ?? "…")
+                            .font(.system(size: 13)).foregroundStyle(Theme.text3)
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
+                }
+            }
+        }
+    }
+
+    private var watchingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Watching now")
+            ForEach(watching) { watcher in
+                HStack(spacing: 12) {
+                    Image(systemName: watcher.paused ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 26)).foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(watcher.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text("\(watcher.user) · \(watcher.device)").font(.system(size: 12)).foregroundStyle(Theme.text3).lineLimit(1)
+                    }
+                    Spacer()
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.raised))
+            }
+        }
+    }
+
+    private var requestsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Pending requests")
+            if let pendingNote {
+                Text(pendingNote).font(.system(size: 14)).foregroundStyle(Theme.text2)
+            } else if pending.isEmpty {
+                Text("Nothing waiting.").font(.system(size: 14)).foregroundStyle(Theme.text2)
+            }
+            ForEach(pending) { request in
+                HStack(spacing: 12) {
+                    ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3).frame(width: 44)
+                    Text(request.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2)
+                    Spacer()
+                    Button { Task { await answer(request, approve: true) } } label: {
+                        Image(systemName: "checkmark.circle.fill").font(.system(size: 30)).foregroundStyle(.green)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Approve")
+                    Button { Task { await answer(request, approve: false) } } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 30)).foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Decline")
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.raised))
+            }
+        }
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.text)
+    }
+
+    // MARK: Loading
+
     private func load() async {
         await loadServer()
-        await loadPending()
+        async let sessions: Void = loadWatching()
+        async let requests: Void = loadPending()
+        _ = await (sessions, requests)
+    }
+
+    private func json(_ path: String) async throws -> Any {
+        try JSONSerialization.jsonObject(with: await store.adminCall(path))
     }
 
     private func loadServer() async {
         do {
-            var next = Info()
-            let system = try JSONSerialization.jsonObject(with: await store.adminCall("System/Info")) as? [String: Any]
-            next.name = system?["ServerName"] as? String ?? "?"
-            next.version = system?["Version"] as? String ?? "?"
-            let counts = try JSONSerialization.jsonObject(with: await store.adminCall("Items/Counts")) as? [String: Any]
+            var next = ServerInfo()
+            let system = try await json("System/Info") as? [String: Any]
+            next.name = system?["ServerName"] as? String ?? "Server"
+            next.version = system?["Version"] as? String ?? ""
+            let counts = try await json("Items/Counts") as? [String: Any]
             next.movies = counts?["MovieCount"] as? Int ?? 0
             next.series = counts?["SeriesCount"] as? Int ?? 0
             next.episodes = counts?["EpisodeCount"] as? Int ?? 0
-            info = next
+            server = next
             errorMessage = nil
+            await loadLibraries()
         } catch {
             errorMessage = "Couldn't load the server: \(error.localizedDescription)"
         }
+    }
+
+    private func loadLibraries() async {
+        guard let rows = try? await json("Library/VirtualFolders") as? [[String: Any]] else { return }
+        var found: [Library] = []
+        for row in rows {
+            guard let id = row["ItemId"] as? String else { continue }
+            let name = row["Name"] as? String ?? "Library"
+            let type = row["CollectionType"] as? String ?? ""
+            found.append(Library(id: id, name: name, type: type, count: nil))
+        }
+        libraries = found
+        for index in found.indices {
+            let id = found[index].id
+            let query = "Items?ParentId=\(id)&Recursive=true&Limit=0&IncludeItemTypes=Movie,Series"
+            guard let data = try? await store.adminCall(query),
+                  let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let total = body["TotalRecordCount"] as? Int,
+                  index < libraries.count, libraries[index].id == id else { continue }
+            libraries[index].count = total
+        }
+    }
+
+    private func loadWatching() async {
+        guard let rows = try? await json("Sessions?ActiveWithinSeconds=300") as? [[String: Any]] else { return }
+        var found: [Watcher] = []
+        for row in rows {
+            guard let item = row["NowPlayingItem"] as? [String: Any], let id = row["Id"] as? String else { continue }
+            let state = row["PlayState"] as? [String: Any]
+            let name = item["Name"] as? String ?? "Something"
+            let series = item["SeriesName"] as? String
+            let title = series.map { "\($0) · \(name)" } ?? name
+            found.append(Watcher(id: id, user: row["UserName"] as? String ?? "?", title: title,
+                                 device: row["DeviceName"] as? String ?? "?", paused: state?["IsPaused"] as? Bool ?? false))
+        }
+        watching = found
     }
 
     private func loadPending() async {
@@ -121,6 +322,8 @@ struct AdminView: View {
         }
     }
 
+    // MARK: Actions
+
     private func answer(_ request: SeerrMyRequest, approve: Bool) async {
         do {
             try await seerr?.resolve(request.id, approve: approve)
@@ -133,10 +336,14 @@ struct AdminView: View {
         }
     }
 
-    private func scan() async {
+    /// id nil scans everything; otherwise only that library.
+    private func scan(id: String?, name: String) async {
+        if let id { scanning.insert(id) }
+        defer { if let id { scanning.remove(id) } }
         do {
-            _ = try await store.adminCall("Library/Refresh", method: "POST")
-            message = "Library scan started"
+            let path = id.map { "Items/\($0)/Refresh?Recursive=true&MetadataRefreshMode=Default&ImageRefreshMode=Default" } ?? "Library/Refresh"
+            _ = try await store.adminCall(path, method: "POST")
+            message = "Scanning \(name)"
         } catch {
             message = "Couldn't start the scan: \(error.localizedDescription)"
         }
