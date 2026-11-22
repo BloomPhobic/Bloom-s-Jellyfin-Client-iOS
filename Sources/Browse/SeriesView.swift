@@ -144,22 +144,17 @@ struct SeriesView: View {
                     .padding(.vertical, 10)
                     .background(Capsule().fill(Theme.raised))
                     .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
-                    .padding(.bottom, Self.aboveTabBar)
-                    .ignoresSafeArea(edges: .bottom)
+                    .padding(.bottom, 8)
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
         }
-        .overlay(alignment: .bottom) {
-            if selecting {
-                selectionBar
-                    .padding(.bottom, Self.aboveTabBar)
-                    .ignoresSafeArea(edges: .bottom)
-            }
-        }
-        // Lets the last episodes scroll clear of the selection bar.
+        // A real bottom inset: it sits right above the page's tab-bar space, and the episodes scroll clear of it.
+        // The toast above is laid out above this inset too.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: selecting ? 120 : 0)
+            if selecting {
+                selectionBar.padding(.bottom, 4)
+            }
         }
         .alert("Can't download", isPresented: Binding(get: { downloadMessage != nil }, set: { if !$0 { downloadMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -373,9 +368,6 @@ struct SeriesView: View {
             }
         }
     }
-
-    /// Distance from the screen's bottom edge to just above the floating tab bar.
-    private static let aboveTabBar: CGFloat = 112
 
     private func toggleSelection(_ episode: BaseItemDto) {
         guard let id = episode.id else { return }

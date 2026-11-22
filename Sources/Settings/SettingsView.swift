@@ -53,7 +53,7 @@ struct SettingsView: View {
                         Label("Languages", systemImage: "character.bubble")
                     }
                     NavigationLink {
-                        SeerrSettingsView()
+                        RequestsHubView()
                             .tabBarClearance()
                     } label: {
                         Label("Requests", systemImage: "tray.and.arrow.down")

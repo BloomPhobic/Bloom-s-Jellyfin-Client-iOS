@@ -1,5 +1,63 @@
 import SwiftUI
 
+extension View {
+    /// A short message that slides in just above the page's bottom space and goes away by itself.
+    func toast(_ text: Binding<String?>) -> some View {
+        modifier(ToastModifier(text: text))
+    }
+}
+
+private struct ToastModifier: ViewModifier {
+    @Binding var text: String?
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .bottom) {
+                if let text {
+                    Text(text)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: text)
+            .task(id: text) {
+                guard text != nil else { return }
+                try? await Task.sleep(for: .seconds(3.5))
+                if !Task.isCancelled { text = nil }
+            }
+    }
+}
+
+/// Same size for every state so the list lines up; filled = you can tap it.
+private struct StatePill: View {
+    enum Kind { case action, requested, neutral }
+    let title: String
+    let icon: String?
+    let kind: Kind
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon { Image(systemName: icon).font(.system(size: 12, weight: .bold)) }
+            Text(title)
+        }
+        .font(.system(size: 14, weight: .bold))
+        .foregroundStyle(kind == .action ? Theme.onAccent : kind == .requested ? Theme.accent : Theme.text3)
+        .frame(width: 112, height: 34)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(kind == .action ? Theme.accent : Color.clear))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(kind == .action ? Color.clear : (kind == .requested ? Theme.accent.opacity(0.7) : Theme.line), lineWidth: 1))
+    }
+}
+
 /// Search the request server and ask for something that isn't on the Jellyfin server.
 struct RequestSearchView: View {
     @Environment(SessionStore.self) private var store
@@ -34,7 +92,9 @@ struct RequestSearchView: View {
                 ContentUnavailableView("Requests are off", systemImage: "tray", description: Text("Add the request server in Settings → Requests."))
             } else if let errorMessage {
                 ContentUnavailableView("Search failed", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
-            } else if results.isEmpty && !isSearching && searchedTerm == term && !term.isEmpty {
+            } else if term.isEmpty {
+                ContentUnavailableView("Request something", systemImage: "magnifyingglass", description: Text("Search for a movie, show or anime."))
+            } else if results.isEmpty && !isSearching && searchedTerm == term {
                 ContentUnavailableView.search(text: term)
             }
         }
@@ -42,7 +102,7 @@ struct RequestSearchView: View {
         .navigationTitle("Request")
         .toolbar {
             NavigationLink {
-                MyRequestsView().tabBarClearance()
+                MyRequestsView().navigationTitle("My requests").tabBarClearance()
             } label: {
                 Image(systemName: "list.bullet")
             }
@@ -58,14 +118,12 @@ struct RequestSearchView: View {
             }
         }
         .sheet(item: $seasonTarget) { target in
-            SeasonPicker(result: target) { done in
+            SeasonPicker(result: target) { count in
                 seasonTarget = nil
-                if done { markRequested(target) }
+                if let count { markRequested(target, seasons: count) }
             }
         }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK", role: .cancel) {}
-        }
+        .toast($message)
     }
 
     @ViewBuilder
@@ -84,14 +142,14 @@ struct RequestSearchView: View {
             }
             Spacer(minLength: 8)
             if result.isAvailable {
-                Text("On the server").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text3)
+                StatePill(title: "On server", icon: "checkmark.circle", kind: .neutral)
             } else if result.isRequested || justRequested.contains(result.id) {
-                Label("Requested", systemImage: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accent)
+                StatePill(title: "Requested", icon: "checkmark", kind: .requested)
             } else {
-                Button("Request") { tapRequest(result) }
-                    .font(.system(size: 14, weight: .bold))
-                    .buttonStyle(.bordered)
-                    .tint(Theme.accent)
+                Button { tapRequest(result) } label: {
+                    StatePill(title: "Request", icon: "plus", kind: .action)
+                }
+                .buttonStyle(PressableStyle())
             }
         }
     }
@@ -111,9 +169,10 @@ struct RequestSearchView: View {
         }
     }
 
-    private func markRequested(_ result: SeerrResult) {
+    private func markRequested(_ result: SeerrResult, seasons: Int? = nil) {
         justRequested.insert(result.id)
-        message = "Requested “\(result.displayTitle)”."
+        let what = seasons.map { $0 == 1 ? " (1 season)" : " (\($0) seasons)" } ?? ""
+        message = "Requested “\(result.displayTitle)”\(what). It shows under My requests."
     }
 
     private func handle(_ error: Error) {
@@ -121,7 +180,7 @@ struct RequestSearchView: View {
         if case SeerrError.notSignedIn = error {
             showLogin = true
         } else {
-            message = error.localizedDescription
+            message = "Couldn't send the request: \(error.localizedDescription)"
         }
     }
 
@@ -161,7 +220,8 @@ struct RequestSearchView: View {
 private struct SeasonPicker: View {
     @Environment(SessionStore.self) private var store
     let result: SeerrResult
-    let done: (Bool) -> Void
+    /// The number of seasons requested, or nil when cancelled.
+    let done: (Int?) -> Void
 
     @State private var seasons: [SeerrSeason] = []
     @State private var chosen: Set<Int> = []
@@ -192,7 +252,7 @@ private struct SeasonPicker: View {
             .navigationTitle(result.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { done(false) } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { done(nil) } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Request") { Task { await submit() } }.disabled(chosen.isEmpty)
                 }
@@ -215,7 +275,7 @@ private struct SeasonPicker: View {
     private func submit() async {
         do {
             try await SeerrClient(userID: store.session?.userID)?.request(result, seasons: chosen.sorted())
-            done(true)
+            done(chosen.count)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -281,6 +341,10 @@ struct MyRequestsView: View {
     @State private var requests: [SeerrMyRequest] = []
     @State private var errorMessage: String?
     @State private var isLoading = true
+    @State private var needsLogin = false
+    @State private var showLogin = false
+
+    private var client: SeerrClient? { SeerrClient(userID: store.session?.userID) }
 
     var body: some View {
         List {
@@ -303,7 +367,19 @@ struct MyRequestsView: View {
         .listStyle(.plain)
         .themedBackground()
         .overlay {
-            if let errorMessage {
+            if client == nil {
+                ContentUnavailableView("Requests are off", systemImage: "tray", description: Text("Add the request server in the Server tab."))
+            } else if needsLogin {
+                ContentUnavailableView {
+                    Label("Sign in", systemImage: "person.crop.circle")
+                } description: {
+                    Text("Use your Jellyfin login to see your requests.")
+                } actions: {
+                    Button("Sign in") { showLogin = true }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.accent)
+                }
+            } else if let errorMessage {
                 ErrorState(message: errorMessage) { await load() }
             } else if isLoading && requests.isEmpty {
                 ProgressView()
@@ -311,22 +387,76 @@ struct MyRequestsView: View {
                 ContentUnavailableView("No requests yet", systemImage: "tray")
             }
         }
-        .navigationTitle("My requests")
         .refreshable { await load() }
         .task { await load() }
+        .sheet(isPresented: $showLogin) {
+            SeerrLoginSheet(userID: store.session?.userID, defaultName: store.session?.userName ?? "") {
+                Task { await load() }
+            }
+        }
     }
 
     private func load() async {
         defer { isLoading = false }
-        guard let client = SeerrClient(userID: store.session?.userID), client.isSignedIn else {
-            errorMessage = SeerrError.notSignedIn.localizedDescription + " Open Request from Search once to sign in."
+        guard let client else { return }
+        guard client.isSignedIn else {
+            needsLogin = true
+            showLogin = true
             return
         }
+        needsLogin = false
         do {
             requests = try await client.myRequests()
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            if case SeerrError.notSignedIn = error {
+                needsLogin = true
+            } else {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// Settings → Requests: opens on your requests once the request server is set up and signed in;
+/// the server address and sign-out live in the Server tab.
+struct RequestsHubView: View {
+    private enum Tab: String, CaseIterable {
+        case requests = "Requests"
+        case server = "Server"
+    }
+
+    @Environment(SessionStore.self) private var store
+    @AppStorage(SeerrClient.urlKey) private var url = ""
+    @State private var chosen: Tab?
+
+    private var tab: Tab {
+        chosen ?? (SeerrClient(userID: store.session?.userID)?.isSignedIn == true ? .requests : .server)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("", selection: Binding(get: { tab }, set: { chosen = $0 })) {
+                ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            switch tab {
+            case .requests: MyRequestsView()
+            case .server: SeerrSettingsView()
+            }
+        }
+        .themedBackground()
+        .navigationTitle("Requests")
+        .toolbar {
+            if ServerProbe.normalize(url) != nil {
+                NavigationLink {
+                    RequestSearchView(term: "").tabBarClearance()
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
         }
     }
 }
@@ -341,7 +471,8 @@ struct SeerrSettingsView: View {
     var body: some View {
         List {
             Section {
-                TextField("https://requests.example.com", text: $url)
+                // verbatim: otherwise the placeholder is drawn as a blue link
+                TextField("Address", text: $url, prompt: Text(verbatim: "https://requests.example.com"))
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -360,20 +491,16 @@ struct SeerrSettingsView: View {
                 Text("Leave empty to turn requests off. People sign in with their Jellyfin login the first time they request something.")
             }
 
-            if let client = SeerrClient(userID: store.session?.userID) {
+            if let client = SeerrClient(userID: store.session?.userID), client.isSignedIn {
                 Section {
-                    NavigationLink("My requests") { MyRequestsView().tabBarClearance() }
-                    if client.isSignedIn {
-                        Button("Sign out of request server", role: .destructive) {
-                            client.signOut()
-                            signedInRefresh += 1
-                        }
+                    Button("Sign out of request server", role: .destructive) {
+                        client.signOut()
+                        signedInRefresh += 1
                     }
                 }
                 .id(signedInRefresh)
             }
         }
-        .navigationTitle("Requests")
     }
 
     private func test() async {
