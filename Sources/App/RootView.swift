@@ -6,6 +6,10 @@ enum AppTab: Hashable, CaseIterable {
     case search
     case downloads
     case settings
+    /// Admins only; a round button beside the capsule, not a tab inside it.
+    case admin
+
+    static let capsule: [AppTab] = [.home, .search, .downloads, .settings]
 
     var title: String {
         switch self {
@@ -13,6 +17,7 @@ enum AppTab: Hashable, CaseIterable {
         case .search: return "Search"
         case .downloads: return "Downloads"
         case .settings: return "Settings"
+        case .admin: return "Admin"
         }
     }
 
@@ -22,6 +27,7 @@ enum AppTab: Hashable, CaseIterable {
         case .search: return "magnifyingglass"
         case .downloads: return selected ? "arrow.down.circle.fill" : "arrow.down.circle"
         case .settings: return selected ? "gearshape.fill" : "gearshape"
+        case .admin: return selected ? "checkmark.shield.fill" : "checkmark.shield"
         }
     }
 }
@@ -38,6 +44,8 @@ struct RootView: View {
     @State private var searchNavigator = BrowseNavigator()
     @State private var downloadsReset = 0
     private let keyboard = KeyboardState.shared
+
+    private var showsAdmin: Bool { store.session != nil && store.isAdmin }
 
     var body: some View {
         TabView(selection: $selection) {
@@ -66,17 +74,23 @@ struct RootView: View {
             SettingsView()
                 .tabBarSpace()
                 .tag(AppTab.settings)
+
+            if showsAdmin {
+                AdminView()
+                    .tabBarSpace()
+                    .tag(AppTab.admin)
+            }
         }
         .overlay(alignment: .bottom) {
             if !keyboard.isVisible {
-            FloatingTabBar(selection: $selection) { tab in
+            FloatingTabBar(selection: $selection, showsAdmin: showsAdmin) { tab in
                 // Tapping the current tab again goes back to its first page.
                 withAnimation {
                     switch tab {
                     case .home: homeNavigator.path = []
                     case .search: searchNavigator.path = []
                     case .downloads: downloadsReset += 1
-                    case .settings: break
+                    case .settings, .admin: break
                     }
                 }
             }
@@ -103,6 +117,9 @@ struct RootView: View {
             selection = .home
             homeNavigator.path = []
             homeNavigator.openSeries(id: id, name: note.userInfo?["name"] as? String)
+        }
+        .onChange(of: showsAdmin) {
+            if !showsAdmin && selection == .admin { selection = .home }
         }
         .onChange(of: store.isAddingAccount) {
             // The login screen for another account shows on Home.
@@ -182,14 +199,50 @@ final class KeyboardState {
 /// The floating capsule tab bar. The highlight slides between tabs and the icon bounces when chosen.
 private struct FloatingTabBar: View {
     @Binding var selection: AppTab
+    let showsAdmin: Bool
     let reselect: (AppTab) -> Void
 
     @Namespace private var highlight
     @State private var bounces: [AppTab: Int] = [:]
 
     var body: some View {
+        HStack(spacing: 8) {
+            capsule
+            if showsAdmin { adminButton }
+        }
+        .padding(.bottom, 6)
+    }
+
+    private var adminButton: some View {
+        let isSelected = selection == .admin
+        return Button {
+            if !isSelected {
+                bounces[.admin, default: 0] += 1
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { selection = .admin }
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: AppTab.admin.icon(selected: isSelected))
+                    .font(.system(size: 19, weight: .semibold))
+                    .symbolEffect(.bounce, value: bounces[.admin, default: 0])
+                Text("Admin").font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.text3)
+            .frame(width: 64, height: 64)
+            .background(Circle().fill(isSelected ? Theme.accent.opacity(0.15) : .clear))
+            .padding(5)
+            .background(Circle().fill(Theme.raised2.opacity(0.96)))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Admin")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var capsule: some View {
         HStack(spacing: 0) {
-            ForEach(AppTab.allCases, id: \.self) { tab in
+            ForEach(AppTab.capsule, id: \.self) { tab in
                 let isSelected = tab == selection
                 Button {
                     if isSelected {
@@ -226,11 +279,10 @@ private struct FloatingTabBar: View {
             }
         }
         .padding(5)
-        .frame(width: 352)
+        .frame(width: showsAdmin ? 270 : 352)
         .background(Capsule().fill(Theme.raised2.opacity(0.96)))
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
         .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
-        .padding(.bottom, 6)
     }
 }
 

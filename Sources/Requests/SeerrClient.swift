@@ -196,7 +196,8 @@ struct SeerrClient {
     }
 
     private func send<T: Decodable>(_ type: T.Type, method: String = "GET", _ path: String,
-                                    query: [URLQueryItem] = [], body: [String: Any]? = nil) async throws -> T {
+                                    query: [URLQueryItem] = [], body: [String: Any]? = nil,
+                                    keepCookieOnForbidden: Bool = false) async throws -> T {
         guard let cookie = Keychain.data(for: cookieKey).flatMap({ String(data: $0, encoding: .utf8) }) else {
             throw SeerrError.notSignedIn
         }
@@ -215,6 +216,7 @@ struct SeerrClient {
         }
         let (data, response) = try await Self.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SeerrError.http(0) }
+        if http.statusCode == 403 && keepCookieOnForbidden { throw SeerrError.http(403) }
         if http.statusCode == 401 || http.statusCode == 403 {
             signOut() // the cookie expired: ask for the password again
             throw SeerrError.notSignedIn
@@ -246,9 +248,17 @@ struct SeerrClient {
         _ = try await send(Ignored.self, method: "POST", "request", body: body)
     }
 
-    func myRequests() async throws -> [SeerrMyRequest] {
-        let rows = try await send(Page<RequestRow>.self, "request",
-                                  query: [URLQueryItem(name: "take", value: "50"), URLQueryItem(name: "sort", value: "added")]).results
+    /// Approve or decline a request (needs a Seerr account that may manage requests).
+    func resolve(_ id: Int, approve: Bool) async throws {
+        _ = try await send(Ignored.self, method: "POST", "request/\(id)/\(approve ? "approve" : "decline")",
+                           keepCookieOnForbidden: true)
+    }
+
+    /// filter: a Seerr request filter such as "pending"; nil lists everything.
+    func myRequests(filter: String? = nil) async throws -> [SeerrMyRequest] {
+        var query = [URLQueryItem(name: "take", value: "50"), URLQueryItem(name: "sort", value: "added")]
+        if let filter { query.append(URLQueryItem(name: "filter", value: filter)) }
+        let rows = try await send(Page<RequestRow>.self, "request", query: query).results
         // At most 4 title lookups at a time, so a long list doesn't hammer the server.
         var out: [SeerrMyRequest] = []
         for start in stride(from: 0, to: rows.count, by: 4) {

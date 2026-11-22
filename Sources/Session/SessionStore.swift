@@ -74,6 +74,8 @@ final class SessionStore {
     private(set) var client: JellyfinClient?
     /// The server allows this account to download media (the "Allow media downloading" user setting).
     private(set) var canDownload = true
+    /// The signed-in account is a Jellyfin administrator (shows the Admin tab). The server still checks every call.
+    private(set) var isAdmin = false
 
     /// An address answers and the phone is online.
     var isConnected: Bool {
@@ -437,6 +439,24 @@ final class SessionStore {
         return client.url(with: Paths.getUserImage(parameters: parameters))
     }
 
+    // MARK: - Admin
+
+    /// One call to the Jellyfin server as the signed-in account (admin pages). Returns the body.
+    func adminCall(_ path: String, method: String = "GET") async throws -> Data {
+        guard let session, let route, let url = URL(string: route.address)?.appending(path: path) else {
+            throw SessionError.notConnected
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 20
+        request.setValue("MediaBrowser Client=\"Bloom for iOS\", Device=\"iPhone\", DeviceId=\"\(session.deviceID ?? Self.installDeviceID)\", Version=\"\(AppInfo.version)\", Token=\"\(session.accessToken)\"",
+                         forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw URLError(.badServerResponse) }
+        return data
+    }
+
     // MARK: - Profile
 
     /// Changes the current account's password. The saved sign-in is a token, so it stays valid.
@@ -555,6 +575,7 @@ final class SessionStore {
 
     private func activate(_ account: SavedSession, checked: Bool) {
         session = account
+        isAdmin = false
         sessionChecked = checked
         UserDefaults.standard.set(account.userID, forKey: Self.currentUserKey)
         rebuildClient()
@@ -614,6 +635,7 @@ final class SessionStore {
                let user = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let policy = user["Policy"] as? [String: Any] {
                 canDownload = policy["EnableContentDownloading"] as? Bool ?? true
+                isAdmin = policy["IsAdministrator"] as? Bool ?? false
             }
             if status == 401 || status == 403 {
                 AppLog.shared.log("The sign-in for \(current.userName) is no longer valid (HTTP \(status)). Please sign in again.", level: .warning)
