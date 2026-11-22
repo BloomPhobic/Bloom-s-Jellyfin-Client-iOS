@@ -219,6 +219,32 @@ struct LibraryAPI {
 
     /// Titles in your library like this one. The server picks them by shared genres, tags,
     /// studios and people, and closeness in year.
+    /// Favourite movies, shows and episodes, one page at a time.
+    func favourites(startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
+        var parameters = Paths.GetItemsParameters()
+        parameters.userID = userID
+        parameters.isRecursive = true
+        parameters.includeItemTypes = [.movie, .series, .episode]
+        parameters.filters = [.isFavorite]
+        parameters.sortBy = [.sortName]
+        parameters.startIndex = startIndex
+        parameters.limit = limit
+        parameters.enableTotalRecordCount = true
+        parameters.fields = Self.listFields
+        parameters.enableUserData = true
+        let result = try await client.send(Paths.getItems(parameters: parameters)).value
+        return (result.items ?? [], result.totalRecordCount ?? 0)
+    }
+
+    /// Movies and shows the server suggests from what the user watches.
+    func recommendations(limit: Int = 16) async throws -> [BaseItemDto] {
+        var parameters = Paths.GetSuggestionsParameters()
+        parameters.mediaType = ["Video"]
+        parameters.type = [.movie, .series]
+        parameters.limit = limit
+        return try await client.send(Paths.getSuggestions(userID: userID, parameters: parameters)).value.items ?? []
+    }
+
     func similar(to itemID: String, limit: Int = 16) async throws -> [BaseItemDto] {
         var parameters = Paths.GetSimilarItemsParameters()
         parameters.userID = userID

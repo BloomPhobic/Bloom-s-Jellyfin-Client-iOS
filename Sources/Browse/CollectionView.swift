@@ -86,7 +86,7 @@ struct CollectionView: View {
     }
 
     private func loadMore() async {
-        guard collection == .history, !isLoading, items.count < total else { return }
+        guard collection == .history || collection == .favourites, !isLoading, items.count < total else { return }
         isLoading = true
         defer { isLoading = false }
         if let page = try? await fetch(startIndex: items.count) {
@@ -105,6 +105,8 @@ struct CollectionView: View {
             return (found, found.count)
         case .history:
             return try await api.watchHistory(startIndex: startIndex, limit: Self.pageSize)
+        case .favourites:
+            return try await api.favourites(startIndex: startIndex, limit: Self.pageSize)
         }
     }
 }

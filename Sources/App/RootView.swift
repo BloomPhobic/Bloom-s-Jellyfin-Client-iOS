@@ -53,7 +53,7 @@ struct RootView: View {
         TabView(selection: $selection) {
             NavigationStack(path: $homeNavigator.path) {
                 SignedInGate { api in
-                    HomeView(api: api)
+                    HomeView(api: api, scrollTop: homeScrollTop)
                 }
             }
             .environment(homeNavigator)
@@ -89,7 +89,9 @@ struct RootView: View {
                 // Tapping the current tab again goes back to its first page.
                 withAnimation {
                     switch tab {
-                    case .home: homeNavigator.path = []
+                    case .home:
+                        homeNavigator.path = []
+                        homeScrollTop += 1
                     case .search: searchNavigator.path = []
                     case .downloads: downloadsReset += 1
                     case .settings: settingsReset += 1

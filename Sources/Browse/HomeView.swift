@@ -15,12 +15,14 @@ enum HomeCollection: String, Hashable {
     case continueWatching
     case nextUp
     case history
+    case favourites
 
     var title: String {
         switch self {
         case .continueWatching: return "Continue watching"
         case .nextUp: return "Next up"
         case .history: return "Watch history"
+        case .favourites: return "Favourites"
         }
     }
 }
@@ -130,11 +132,14 @@ struct SignedInGate<Content: View>: View {
 
 struct HomeView: View {
     let api: LibraryAPI
+    /// Changes when the Home tab is tapped again: scroll back to the top.
+    var scrollTop = 0
 
     @Environment(SessionStore.self) private var store
     @State private var resume: [BaseItemDto] = []
     @State private var nextUp: [BaseItemDto] = []
     @State private var history: [BaseItemDto] = []
+    @State private var recommended: [BaseItemDto] = []
     @State private var libraries: [BaseItemDto] = []
     @State private var latest: [String: [BaseItemDto]] = [:]
     @State private var errorMessage: String?
@@ -156,9 +161,11 @@ struct HomeView: View {
     private var nextUpRow: [BaseItemDto] { resume.isEmpty ? Array(nextUp.dropFirst()) : nextUp }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 26) {
                 header
+                    .id("top")
                 if let errorMessage {
                     ErrorState(message: errorMessage) {
                         await load()
@@ -184,6 +191,9 @@ struct HomeView: View {
                 if !nextUpRow.isEmpty {
                     row("Next up", items: nextUpRow, wide: true, seeAll: .nextUp)
                 }
+                if !recommended.isEmpty {
+                    row("Recommended for you", items: recommended, wide: false)
+                }
                 ForEach(libraries, id: \.id) { library in
                     if let items = latest[library.id ?? ""], !items.isEmpty {
                         row("Recently added in \(library.name ?? "library")", items: items, wide: false)
@@ -199,6 +209,10 @@ struct HomeView: View {
                 }
             }
             .padding(.bottom, 16)
+        }
+        .onChange(of: scrollTop) {
+            withAnimation { proxy.scrollTo("top", anchor: .top) }
+        }
         }
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Home")
@@ -340,6 +354,10 @@ struct HomeView: View {
                         }
                         .buttonStyle(PressableStyle())
                     }
+                    NavigationLink(value: BrowseRoute.collection(.favourites)) {
+                        FavouritesCard()
+                    }
+                    .buttonStyle(PressableStyle())
                 }
                 .padding(.horizontal, 16)
             }
@@ -422,12 +440,14 @@ struct HomeView: View {
         async let nextUpRequest = api.nextUp()
         async let librariesRequest = api.libraries()
         async let historyRequest = api.watchHistory()
+        async let recommendedRequest = api.recommendations()
 
         var failures: [String] = []
         var newResume = resume
         var newNextUp = nextUp
         var newLibraries = libraries
         var newHistory = history
+        var newRecommended = recommended
         do { newResume = try await resumeRequest } catch { AuthWatch.report(error); failures.append("continue watching: \(error.localizedDescription)") }
         do { newNextUp = try await nextUpRequest } catch { failures.append("next up: \(error.localizedDescription)") }
         do {
@@ -438,6 +458,7 @@ struct HomeView: View {
         } catch {
             failures.append("libraries: \(error.localizedDescription)")
         }
+        do { newRecommended = try await recommendedRequest } catch { failures.append("recommendations: \(error.localizedDescription)") }
         do { newHistory = try await historyRequest } catch { failures.append("watch history: \(error.localizedDescription)") }
 
         let api = api
@@ -459,6 +480,7 @@ struct HomeView: View {
             nextUp = newNextUp
             libraries = newLibraries
             history = newHistory
+            recommended = newRecommended
             latest = newLatest
         }
         lastLoaded = Date()
@@ -475,6 +497,36 @@ struct HomeView: View {
 }
 
 /// A library on Home: its image with the name and a type icon on a dark band.
+private struct FavouritesCard: View {
+    var body: some View {
+        Color.clear
+            .frame(width: 210 * Metrics.scale, height: 118 * Metrics.scale)
+            .background(Theme.raised)
+            .overlay {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Theme.accent.opacity(0.5))
+            }
+            .overlay(alignment: .bottomLeading) {
+                HStack(spacing: 7) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                    Text("Favourites")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.background.opacity(0.75))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+    }
+}
+
 private struct LibraryCard: View {
     let library: BaseItemDto
     let imageURL: URL?
