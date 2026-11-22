@@ -103,6 +103,8 @@ private struct LanguageEditorPage: View {
                 }
             } label: {
                 Label("Add a language", systemImage: "plus.circle")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
         } header: {
             Text(name)

@@ -13,18 +13,24 @@ struct DownloadsView: View {
 
     private var downloads: DownloadStore { .shared }
 
+    /// Finished downloads of every account on this device, so they stay watchable whoever is signed in.
+    private var everyone: [DownloadRecord] {
+        downloads.list(for: nil)
+    }
+
+    /// Unfinished downloads belong to the signed-in account (only it has the access to continue them).
     private var mine: [DownloadRecord] {
         downloads.list(for: store.session?.userID)
     }
 
     private var movies: [DownloadRecord] {
-        mine.filter { $0.state == .done && !$0.isEpisode }
+        everyone.filter { $0.state == .done && !$0.isEpisode }
             .sorted { ($0.item.sortName ?? $0.item.name ?? "") < ($1.item.sortName ?? $1.item.name ?? "") }
     }
 
     /// Shows with at least one finished episode, in name order.
     private var shows: [DownloadedShow] {
-        let episodes = mine.filter { $0.state == .done && $0.isEpisode }
+        let episodes = everyone.filter { $0.state == .done && $0.isEpisode }
         let grouped = Dictionary(grouping: episodes) { $0.item.seriesID ?? "" }
         return grouped.map { key, value in
             DownloadedShow(id: key, name: value.first?.item.seriesName ?? "Show", episodes: value.sorted(by: DownloadStore.episodeOrder))
@@ -35,7 +41,7 @@ struct DownloadsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if mine.isEmpty {
+                if everyone.isEmpty {
                     DownloadsPlaceholder(icon: "arrow.down.circle", title: "No downloads yet", text: "Tap Download on a movie or episode to watch it without a connection.")
                 } else {
                     list
@@ -55,7 +61,7 @@ struct DownloadsView: View {
         }
         .onChange(of: resetToken) { path = [] }
         .onAppear { freeBytes = DownloadFiles.freeBytes }
-        .onChange(of: mine.count) { freeBytes = DownloadFiles.freeBytes }
+        .onChange(of: everyone.count) { freeBytes = DownloadFiles.freeBytes }
         .fullScreenCover(item: $playback) { session in
             PlayerView(session: session)
                 .environment(store)
@@ -65,7 +71,7 @@ struct DownloadsView: View {
     private var list: some View {
         List {
             Section {
-                LabeledContent("On this iPhone", value: "\(DownloadStore.format(downloads.usedBytes(userID: store.session?.userID))) used · \(DownloadStore.format(freeBytes)) free")
+                LabeledContent("On this iPhone", value: "\(DownloadStore.format(downloads.usedBytes(userID: nil))) used · \(DownloadStore.format(freeBytes)) free")
                     .font(.subheadline)
                 if !store.isConnected {
                     Label("You're offline. Downloads play as usual; your progress is sent to the server later.", systemImage: "wifi.slash")
@@ -345,6 +351,12 @@ private struct ShowRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.text3)
                     .lineLimit(1)
+                if let owner = DownloadStore.shared.owners(of: show.episodes) {
+                    Text(owner)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text2)
+                        .lineLimit(1)
+                }
                 let unwatched = show.episodes.filter { !$0.isWatched }.count
                 if unwatched > 0 {
                     Text("\(unwatched) unwatched")
@@ -375,7 +387,7 @@ private struct ShowDownloadsView: View {
     @State private var confirmDelete = false
 
     private var episodes: [DownloadRecord] {
-        DownloadStore.shared.episodes(seriesID: seriesID, userID: store.session?.userID)
+        DownloadStore.shared.episodes(seriesID: seriesID, userID: nil)
     }
 
     private struct Season: Identifiable {
@@ -493,6 +505,12 @@ private struct DownloadedRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.text3)
                     .lineLimit(1)
+                if let owner = DownloadStore.shared.owners(of: [record]) {
+                    Text(owner)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text2)
+                        .lineLimit(1)
+                }
                 if !record.isWatched, record.resumeSeconds > 0, let duration = runtimeSeconds, duration > 0 {
                     ProgressBar(fraction: record.resumeSeconds / duration, height: 3)
                         .frame(width: 90)

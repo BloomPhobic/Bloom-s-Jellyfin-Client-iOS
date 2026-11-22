@@ -126,12 +126,23 @@ struct PlayerView: View {
         .onChange(of: scrubPosition) { lastInteraction = .now }
         .onChange(of: panel) { lastInteraction = .now }
         .onChange(of: player.isPaused) { lastInteraction = .now }
+        .background {
+            // Hardware keyboard (iPad): space pauses, the arrows skip 10 seconds.
+            Group {
+                Button("") { player.togglePause() }.keyboardShortcut(.space, modifiers: [])
+                Button("") { player.seek(by: -10) }.keyboardShortcut(.leftArrow, modifiers: [])
+                Button("") { player.seek(by: 10) }.keyboardShortcut(.rightArrow, modifiers: [])
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
         .onAppear {
             OrientationLock.set(.landscape, rotateTo: .landscape)
         }
         .onDisappear {
             session.close()
-            OrientationLock.set(.allButUpsideDown, rotateTo: .portrait)
+            OrientationLock.set(.allButUpsideDown, rotateTo: OrientationLock.exitTarget)
         }
     }
 
@@ -657,7 +668,7 @@ struct PlayerView: View {
         session.close()
         showControls = false
         let wasLandscape = OrientationLock.isLandscape
-        OrientationLock.set(.allButUpsideDown, rotateTo: .portrait)
+        OrientationLock.set(.allButUpsideDown, rotateTo: OrientationLock.exitTarget)
         Task {
             if wasLandscape {
                 try? await Task.sleep(for: .milliseconds(400))
@@ -1123,7 +1134,7 @@ private struct SubtitleOptionsView: View {
                 } header: {
                     Text("Look")
                 } footer: {
-                    Text("Applies to plain subtitles like SRT. Styled (ASS) subtitles keep their own look, except for size.")
+                    Text("Bold or a changed style also overrides styled (ASS) subtitles, so typeset signs lose their own look while it is on.")
                 }
 
                 Section {

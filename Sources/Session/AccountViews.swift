@@ -61,7 +61,11 @@ struct AccountMenu: View {
                 name: store.session?.userName ?? "?",
                 imageURL: store.session.flatMap { store.userImageURL(userID: $0.userID, tag: $0.imageTag) }
             )
+            .frame(width: 48, height: 48)
+            .contentShape(Circle())
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .accessibilityLabel("Account")
     }
 }

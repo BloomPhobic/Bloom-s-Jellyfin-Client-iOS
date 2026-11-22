@@ -157,6 +157,9 @@ final class MPVPlayer: PlaybackEngine {
             ("sub-border-size", String(style.borderSize)),
             ("sub-border-style", style == .box ? "background-box" : "outline-and-shadow"),
             ("sub-back-color", "#B0000000"),
+            // Styled (ASS) subtitles ignore all of the above unless forced; only do it when the look was changed,
+            // so typeset signs keep their own style otherwise.
+            ("sub-ass-override", (SubtitleSettings.bold || style != .outline) ? "force" : "scale"),
         ]
         for (name, value) in options {
             let status = core.setString(name, value)

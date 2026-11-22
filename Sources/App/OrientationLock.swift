@@ -11,9 +11,17 @@ enum OrientationLock {
             .first?.interfaceOrientation.isLandscape ?? false
     }
 
+    /// Where to turn when the player closes: iPhones go back to portrait; an iPad stays landscape
+    /// unless it is held upright.
+    static var exitTarget: UIInterfaceOrientationMask {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { return .portrait }
+        return UIDevice.current.orientation.isPortrait ? .portrait : .landscape
+    }
+
     /// Allows `allowed`, then rotates the screen to `rotateTo`.
     static func set(_ allowed: UIInterfaceOrientationMask, rotateTo: UIInterfaceOrientationMask, attempt: Int = 0) {
         mask = allowed
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications() // so exitTarget knows how it is held
         for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
             // The topmost presented screen (the player's full-screen cover) decides what's allowed.
             var controller = scene.keyWindow?.rootViewController

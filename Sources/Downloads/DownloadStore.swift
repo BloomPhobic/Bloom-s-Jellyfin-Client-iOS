@@ -39,6 +39,8 @@ struct DownloadRecord: Codable, Identifiable {
     var needsSync: Bool
     /// Watched/unwatched marked by hand, waiting to reach the server.
     var markedPlayed: Bool? = nil
+    /// Name of the account that downloaded it (nil on older records; looked up from the accounts then).
+    var userName: String? = nil
 
     var isEpisode: Bool { item.type == .episode }
 
@@ -174,6 +176,18 @@ final class DownloadStore {
     }
 
     // MARK: - Queries
+
+    /// "Downloaded by Ana" for the rows, only when more than one account is on this device.
+    func owners(of list: [DownloadRecord]) -> String? {
+        let accounts = sessionStore?.accounts ?? []
+        guard accounts.count > 1 || Set(records.values.map(\.userID)).count > 1 else { return nil }
+        var names: [String] = []
+        for record in list {
+            let name = record.userName ?? accounts.first { $0.userID == record.userID }?.userName
+            if let name, !names.contains(name) { names.append(name) }
+        }
+        return names.isEmpty ? nil : "By " + names.joined(separator: ", ")
+    }
 
     /// The current account's downloads; with nobody signed in, every download on the phone, so they
     /// stay watchable without a login or a connection.
@@ -331,6 +345,8 @@ final class DownloadStore {
         )
         try? FileManager.default.removeItem(at: DownloadFiles.folder(itemID))
         try? FileManager.default.createDirectory(at: DownloadFiles.folder(itemID), withIntermediateDirectories: true)
+        var record = record
+        if let session = sessionStore?.session, session.userID == api.userID { record.userName = session.userName }
         records[itemID] = record
         save()
         startTask(record, url: url)

@@ -43,6 +43,8 @@ struct RootView: View {
     @State private var homeNavigator = BrowseNavigator()
     @State private var searchNavigator = BrowseNavigator()
     @State private var downloadsReset = 0
+    @State private var settingsReset = 0
+    @State private var homeScrollTop = 0
     private let keyboard = KeyboardState.shared
 
     private var showsAdmin: Bool { store.session != nil && store.isAdmin }
@@ -71,7 +73,7 @@ struct RootView: View {
                 .tabBarSpace()
                 .tag(AppTab.downloads)
 
-            SettingsView()
+            SettingsView(resetToken: settingsReset)
                 .tabBarSpace()
                 .tag(AppTab.settings)
 
@@ -90,7 +92,8 @@ struct RootView: View {
                     case .home: homeNavigator.path = []
                     case .search: searchNavigator.path = []
                     case .downloads: downloadsReset += 1
-                    case .settings, .admin: break
+                    case .settings: settingsReset += 1
+                    case .admin: break
                     }
                 }
             }
