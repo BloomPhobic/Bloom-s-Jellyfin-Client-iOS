@@ -36,7 +36,7 @@ struct SeerrResult: Decodable, Identifiable, Hashable {
     var id: String { "\(mediaType)-\(tmdbID)" }
     var displayTitle: String { title ?? name ?? "Untitled" }
     var year: String? { (releaseDate ?? firstAirDate).flatMap { $0.count >= 4 ? String($0.prefix(4)) : nil } }
-    var posterURL: URL? { SeerrClient.poster(posterPath) }
+    var posterURL: URL? { SeerrClient.image(posterPath, "w185") }
     /// Seerr media status: 2 pending, 3 processing, 4 partly available, 5 available.
     var isAvailable: Bool { (mediaInfo?.status ?? 0) >= 4 }
     var isRequested: Bool { [2, 3].contains(mediaInfo?.status ?? 0) }
@@ -52,15 +52,44 @@ struct SeerrMyRequest: Identifiable {
     /// Seerr request status: 1 pending, 2 approved, 3 declined.
     let status: Int
     let title: String
-    let posterURL: URL?
+    let posterPath: String?
+    let mediaType: String?
+    let tmdbID: Int?
 
-    var statusLabel: String {
-        switch status {
-        case 2: return "Approved"
-        case 3: return "Declined"
-        default: return "Pending"
-        }
+    var posterURL: URL? { SeerrClient.image(posterPath, "w185") }
+
+    /// What the detail page needs to open this title.
+    var asResult: SeerrResult? {
+        guard let mediaType, let tmdbID else { return nil }
+        return SeerrResult(tmdbID: tmdbID, mediaType: mediaType, title: title, name: nil, releaseDate: nil,
+                           firstAirDate: nil, posterPath: posterPath, mediaInfo: nil)
     }
+}
+
+/// The detail page of a movie or show (TMDB-shaped; every field may be missing).
+struct SeerrDetail: Decodable {
+    struct Genre: Decodable { let name: String? }
+    struct Cast: Decodable {
+        let name: String?
+        let character: String?
+    }
+    struct Credits: Decodable { let cast: [Cast]? }
+
+    let title: String?
+    let name: String?
+    let overview: String?
+    let tagline: String?
+    let backdropPath: String?
+    let posterPath: String?
+    let releaseDate: String?
+    let firstAirDate: String?
+    let genres: [Genre]?
+    let runtime: Int?
+    let episodeRunTime: [Int]?
+    let numberOfSeasons: Int?
+    let voteAverage: Double?
+    let credits: Credits?
+    let mediaInfo: SeerrResult.MediaInfo?
 }
 
 /// Talks to a Seerr (Jellyseerr/Overseerr) server. One fixed address, signed in with the user's Jellyfin login;
@@ -102,8 +131,9 @@ struct SeerrClient {
         UserDefaults.standard.string(forKey: urlKey).flatMap(ServerProbe.normalize)
     }
 
-    static func poster(_ path: String?) -> URL? {
-        path.flatMap { URL(string: "https://image.tmdb.org/t/p/w185\($0)") }
+    /// size: a TMDB image size such as "w185", "w342" or "w780".
+    static func image(_ path: String?, _ size: String) -> URL? {
+        path.flatMap { URL(string: "https://image.tmdb.org/t/p/\(size)\($0)") }
     }
 
     /// nil when no request server is set or nobody is signed in to Jellyfin.
@@ -178,6 +208,10 @@ struct SeerrClient {
         return page.results.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }
     }
 
+    func detail(_ result: SeerrResult) async throws -> SeerrDetail {
+        try await send(SeerrDetail.self, "\(result.mediaType)/\(result.tmdbID)")
+    }
+
     func seasons(tvID: Int) async throws -> [SeerrSeason] {
         let detail = try await send(TvDetail.self, "tv/\(tvID)")
         return (detail.seasons ?? []).filter { $0.seasonNumber > 0 }
@@ -204,7 +238,8 @@ struct SeerrClient {
                     }
                     return SeerrMyRequest(id: row.id, status: row.status,
                                           title: info?.title ?? info?.name ?? "Unknown title",
-                                          posterURL: Self.poster(info?.posterPath))
+                                          posterPath: info?.posterPath,
+                                          mediaType: row.media?.mediaType, tmdbID: row.media?.tmdbId)
                 }
             }
             var out: [SeerrMyRequest] = []

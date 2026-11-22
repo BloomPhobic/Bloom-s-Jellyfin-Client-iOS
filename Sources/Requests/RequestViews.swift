@@ -70,6 +70,7 @@ struct RequestSearchView: View {
     @State private var reload = 0
     @State private var justRequested: Set<String> = []
     @State private var seasonTarget: SeerrResult?
+    @State private var detailTarget: SeerrResult?
     @State private var message: String?
 
     init(term: String) {
@@ -123,24 +124,34 @@ struct RequestSearchView: View {
                 if let count { markRequested(target, seasons: count) }
             }
         }
+        .navigationDestination(item: $detailTarget) { target in
+            RequestDetailView(result: target) { justRequested.insert($0.id) }
+                .tabBarClearance()
+        }
         .toast($message)
     }
 
     @ViewBuilder
     private func row(_ result: SeerrResult) -> some View {
         HStack(spacing: 12) {
-            ArtworkFrame(url: result.posterURL, aspectRatio: 2 / 3)
-                .frame(width: 50)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(2)
-                Text([result.mediaType == "tv" ? "Show" : "Movie", result.year].compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text3)
+            // Tapping the title area opens the detail page; the pill on the right requests.
+            HStack(spacing: 12) {
+                ArtworkFrame(url: result.posterURL, aspectRatio: 2 / 3)
+                    .frame(width: 50)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(result.displayTitle)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(2)
+                    Text([result.mediaType == "tv" ? "Show" : "Movie", result.year].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text3)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 8)
+            .contentShape(Rectangle())
+            .onTapGesture { detailTarget = result }
+            .accessibilityAddTraits(.isButton)
             if result.isAvailable {
                 StatePill(title: "On server", icon: "checkmark.circle", kind: .neutral)
             } else if result.isRequested || justRequested.contains(result.id) {
@@ -212,6 +223,154 @@ struct RequestSearchView: View {
                 errorMessage = error.localizedDescription
             }
             AppLog.shared.log("Request search failed: \(error.localizedDescription)", level: .error)
+        }
+    }
+}
+
+/// Backdrop, facts, overview and cast for one title, so you can tell it is the right one before requesting.
+struct RequestDetailView: View {
+    @Environment(SessionStore.self) private var store
+    let result: SeerrResult
+    /// Called after a successful request, so the list behind can show it as Requested.
+    let onRequested: (SeerrResult) -> Void
+
+    @State private var detail: SeerrDetail?
+    @State private var errorMessage: String?
+    @State private var requestedHere = false
+    @State private var showSeasons = false
+    @State private var message: String?
+
+    private var status: Int { detail?.mediaInfo?.status ?? result.mediaInfo?.status ?? 0 }
+
+    var body: some View {
+        Group {
+            if let errorMessage, detail == nil {
+                ErrorState(message: errorMessage) { await load() }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if let backdrop = SeerrClient.image(detail?.backdropPath, "w780") {
+                            ArtworkFrame(url: backdrop, aspectRatio: 16 / 9, cornerRadius: 14)
+                        }
+                        HStack(alignment: .top, spacing: 14) {
+                            ArtworkFrame(url: SeerrClient.image(detail?.posterPath ?? result.posterPath, "w342"), aspectRatio: 2 / 3)
+                                .frame(width: 100)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(detail?.title ?? detail?.name ?? result.displayTitle)
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(Theme.text)
+                                if !facts.isEmpty {
+                                    Text(facts)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.text2)
+                                }
+                                if let genres = detail?.genres?.compactMap(\.name), !genres.isEmpty {
+                                    Text(genres.joined(separator: " · "))
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.text3)
+                                }
+                                stateButton.padding(.top, 4)
+                            }
+                        }
+                        if let tagline = detail?.tagline, !tagline.isEmpty {
+                            Text(tagline)
+                                .font(.system(size: 14).italic())
+                                .foregroundStyle(Theme.text2)
+                        }
+                        if let overview = detail?.overview, !overview.isEmpty {
+                            ExpandableText(text: overview)
+                        } else if detail != nil {
+                            Text("No description.").font(.system(size: 14)).foregroundStyle(Theme.text3)
+                        }
+                        if let cast = detail?.credits?.cast?.prefix(8).compactMap(\.name), !cast.isEmpty {
+                            Text("Cast")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Theme.text)
+                                .padding(.top, 4)
+                            Text(cast.joined(separator: ", "))
+                                .font(.system(size: 14))
+                                .foregroundStyle(Theme.text2)
+                        }
+                    }
+                    .padding(16)
+                }
+                .overlay { if detail == nil { ProgressView() } }
+            }
+        }
+        .themedBackground()
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .sheet(isPresented: $showSeasons) {
+            SeasonPicker(result: result) { count in
+                showSeasons = false
+                if let count { didRequest(seasons: count) }
+            }
+        }
+        .toast($message)
+    }
+
+    @ViewBuilder
+    private var stateButton: some View {
+        if status >= 4 {
+            StatePill(title: "On server", icon: "checkmark.circle", kind: .neutral)
+        } else if [2, 3].contains(status) || requestedHere {
+            StatePill(title: "Requested", icon: "checkmark", kind: .requested)
+        } else {
+            Button { tapRequest() } label: {
+                StatePill(title: "Request", icon: "plus", kind: .action)
+            }
+            .buttonStyle(PressableStyle())
+        }
+    }
+
+    /// Year, length or seasons, and the TMDB score.
+    private var facts: String {
+        var parts: [String] = []
+        if let year = (detail?.releaseDate ?? detail?.firstAirDate ?? result.releaseDate ?? result.firstAirDate).flatMap({ $0.count >= 4 ? String($0.prefix(4)) : nil }) {
+            parts.append(year)
+        }
+        if result.mediaType == "tv" {
+            if let n = detail?.numberOfSeasons { parts.append(n == 1 ? "1 season" : "\(n) seasons") }
+        } else if let minutes = detail?.runtime, minutes > 0 {
+            parts.append(minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m")
+        }
+        if let score = detail?.voteAverage, score > 0 {
+            parts.append("★ " + String(format: "%.1f", score))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func tapRequest() {
+        if result.mediaType == "tv" {
+            showSeasons = true
+            return
+        }
+        Task {
+            do {
+                try await SeerrClient(userID: store.session?.userID)?.request(result, seasons: nil)
+                didRequest(seasons: nil)
+            } catch {
+                AppLog.shared.log("Request failed: \(error.localizedDescription)", level: .error)
+                message = "Couldn't send the request: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func didRequest(seasons: Int?) {
+        requestedHere = true
+        onRequested(result)
+        let what = seasons.map { $0 == 1 ? " (1 season)" : " (\($0) seasons)" } ?? ""
+        message = "Requested “\(result.displayTitle)”\(what). It shows under My requests."
+    }
+
+    private func load() async {
+        guard let client = SeerrClient(userID: store.session?.userID) else { return }
+        do {
+            detail = try await client.detail(result)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            AppLog.shared.log("Request detail failed: \(error.localizedDescription)", level: .error)
         }
     }
 }
@@ -343,26 +502,50 @@ struct MyRequestsView: View {
     @State private var isLoading = true
     @State private var needsLogin = false
     @State private var showLogin = false
+    @State private var detailTarget: SeerrResult?
 
     private var client: SeerrClient? { SeerrClient(userID: store.session?.userID) }
 
+    /// Seerr: 2 approved, 3 declined; anything else (pending, or a status newer than this app knows) counts as pending.
+    private var groups: [(title: String, items: [SeerrMyRequest])] {
+        [(title: "Pending", items: requests.filter { $0.status != 2 && $0.status != 3 }),
+         (title: "Approved", items: requests.filter { $0.status == 2 }),
+         (title: "Denied", items: requests.filter { $0.status == 3 })]
+            .filter { !$0.items.isEmpty }
+    }
+
     var body: some View {
         List {
-            ForEach(requests) { request in
-                HStack(spacing: 12) {
-                    ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3)
-                        .frame(width: 50)
-                    Text(request.title)
-                        .font(.system(size: 15, weight: .semibold))
+            ForEach(groups, id: \.title) { group in
+                Section {
+                    ForEach(group.items) { request in
+                        HStack(spacing: 12) {
+                            ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3)
+                                .frame(width: 50)
+                            Text(request.title)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                                .lineLimit(2)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.text3)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { detailTarget = request.asResult }
+                        .listRowBackground(Color.clear)
+                    }
+                } header: {
+                    Text(group.title)
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.text)
-                        .lineLimit(2)
-                    Spacer(minLength: 8)
-                    Text(request.statusLabel)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text3)
+                        .textCase(nil)
                 }
-                .listRowBackground(Color.clear)
             }
+        }
+        .navigationDestination(item: $detailTarget) { target in
+            RequestDetailView(result: target) { _ in }
+                .tabBarClearance()
         }
         .listStyle(.plain)
         .themedBackground()
