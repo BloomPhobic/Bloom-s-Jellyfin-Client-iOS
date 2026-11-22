@@ -239,10 +239,11 @@ struct LibraryAPI {
     /// Movies and shows the server suggests from what the user watches.
     func recommendations(limit: Int = 16) async throws -> [BaseItemDto] {
         var parameters = Paths.GetSuggestionsParameters()
-        parameters.mediaType = ["Video"]
+        parameters.userID = userID
+        parameters.mediaType = [.video]
         parameters.type = [.movie, .series]
         parameters.limit = limit
-        return try await client.send(Paths.getSuggestions(userID: userID, parameters: parameters)).value.items ?? []
+        return try await client.send(Paths.getSuggestions(parameters: parameters)).value.items ?? []
     }
 
     func similar(to itemID: String, limit: Int = 16) async throws -> [BaseItemDto] {
