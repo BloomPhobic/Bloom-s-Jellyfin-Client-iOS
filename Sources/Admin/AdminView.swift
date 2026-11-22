@@ -30,6 +30,7 @@ struct AdminView: View {
         var icon: String {
             switch type {
             case "movies": return "film.fill"
+            case "boxsets": return "square.stack.fill"
             case "tvshows": return "tv.fill"
             case "music": return "music.note"
             case "books": return "book.fill"
@@ -41,7 +42,22 @@ struct AdminView: View {
             switch type {
             case "movies": return "movies"
             case "tvshows": return "shows"
+            case "boxsets": return "collections"
+            case "music": return "albums"
+            case "books": return "books"
             default: return "items"
+            }
+        }
+
+        /// What this kind of library holds, as a Jellyfin item type (nil = any non-folder item).
+        var countedType: String? {
+            switch type {
+            case "movies": return "Movie"
+            case "tvshows": return "Series"
+            case "boxsets": return "BoxSet"
+            case "music": return "MusicAlbum"
+            case "books": return "Book"
+            default: return nil
             }
         }
     }
@@ -281,7 +297,8 @@ struct AdminView: View {
         libraries = found
         for index in found.indices {
             let id = found[index].id
-            let query = "Items?ParentId=\(id)&Recursive=true&Limit=0&IncludeItemTypes=Movie,Series"
+            let filter = found[index].countedType.map { "IncludeItemTypes=\($0)" } ?? "IsFolder=false"
+            let query = "Items?ParentId=\(id)&Recursive=true&Limit=0&\(filter)"
             guard let data = try? await store.adminCall(query),
                   let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let total = body["TotalRecordCount"] as? Int,
