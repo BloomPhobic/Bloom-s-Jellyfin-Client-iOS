@@ -119,6 +119,26 @@ struct SeerrClient {
         let media: Media?
     }
 
+    /// Titles already fetched for My requests, so a refresh doesn't ask for them again.
+    private final class TitleCache: @unchecked Sendable {
+        private var items: [String: TitleInfo] = [:]
+        private let lock = NSLock()
+
+        func get(_ key: String) -> TitleInfo? {
+            lock.lock()
+            defer { lock.unlock() }
+            return items[key]
+        }
+
+        func set(_ key: String, _ value: TitleInfo) {
+            lock.lock()
+            defer { lock.unlock() }
+            items[key] = value
+        }
+    }
+
+    private static let titles = TitleCache()
+
     private static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
@@ -229,22 +249,36 @@ struct SeerrClient {
     func myRequests() async throws -> [SeerrMyRequest] {
         let rows = try await send(Page<RequestRow>.self, "request",
                                   query: [URLQueryItem(name: "take", value: "50"), URLQueryItem(name: "sort", value: "added")]).results
-        return await withTaskGroup(of: SeerrMyRequest.self) { group in
-            for row in rows {
-                group.addTask {
-                    var info: TitleInfo?
-                    if let type = row.media?.mediaType, let tmdb = row.media?.tmdbId {
-                        info = try? await self.send(TitleInfo.self, "\(type)/\(tmdb)")
-                    }
-                    return SeerrMyRequest(id: row.id, status: row.status,
-                                          title: info?.title ?? info?.name ?? "Unknown title",
-                                          posterPath: info?.posterPath,
-                                          mediaType: row.media?.mediaType, tmdbID: row.media?.tmdbId)
+        // At most 4 title lookups at a time, so a long list doesn't hammer the server.
+        var out: [SeerrMyRequest] = []
+        for start in stride(from: 0, to: rows.count, by: 4) {
+            let chunk = rows[start..<min(start + 4, rows.count)]
+            let part = await withTaskGroup(of: SeerrMyRequest.self) { group in
+                for row in chunk {
+                    group.addTask { await self.build(row) }
                 }
+                var items: [SeerrMyRequest] = []
+                for await item in group { items.append(item) }
+                return items
             }
-            var out: [SeerrMyRequest] = []
-            for await item in group { out.append(item) }
-            return out.sorted { $0.id > $1.id }
+            out += part
         }
+        return out.sorted { $0.id > $1.id }
+    }
+
+    private func build(_ row: RequestRow) async -> SeerrMyRequest {
+        var info: TitleInfo?
+        if let type = row.media?.mediaType, let tmdb = row.media?.tmdbId {
+            let key = "\(type)/\(tmdb)"
+            info = Self.titles.get(key)
+            if info == nil, let fetched = try? await send(TitleInfo.self, key) {
+                Self.titles.set(key, fetched)
+                info = fetched
+            }
+        }
+        return SeerrMyRequest(id: row.id, status: row.status,
+                              title: info?.title ?? info?.name ?? "Unknown title",
+                              posterPath: info?.posterPath,
+                              mediaType: row.media?.mediaType, tmdbID: row.media?.tmdbId)
     }
 }

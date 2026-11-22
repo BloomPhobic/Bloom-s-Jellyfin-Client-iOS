@@ -2,6 +2,7 @@ import Foundation
 import JellyfinAPI
 import Network
 import Observation
+import Security
 import UIKit
 
 /// Holds the saved server, the address currently in use, and the signed-in accounts.
@@ -45,6 +46,7 @@ final class SessionStore {
     }
 
     private static let accountsKey = "accounts"
+    private static let accountsBackupKey = "accounts.unreadable"
     private static let legacySessionKey = "session"
     private static let currentUserKey = "currentUserID"
     private static let deviceIDKey = "deviceID"
@@ -562,11 +564,21 @@ final class SessionStore {
         if accounts.isEmpty {
             Keychain.delete(Self.accountsKey)
         } else if let data = try? JSONEncoder().encode(accounts) {
-            Keychain.set(data, for: Self.accountsKey)
+            let status = Keychain.set(data, for: Self.accountsKey)
+            if status != errSecSuccess {
+                AppLog.shared.log("Couldn't save the accounts to the Keychain (status \(status))", level: .error)
+            }
         }
     }
 
     private func restoreSession() {
+        if let data = Keychain.data(for: Self.accountsKey), (try? JSONDecoder().decode([SavedSession].self, from: data)) == nil {
+            // Unreadable (for example written by a different version). Keep a copy so adding an account can't overwrite it for good.
+            if Keychain.data(for: Self.accountsBackupKey) == nil {
+                Keychain.set(data, for: Self.accountsBackupKey)
+            }
+            AppLog.shared.log("Saved accounts couldn't be read; a backup copy was kept in the Keychain", level: .error)
+        }
         if let data = Keychain.data(for: Self.accountsKey),
            let saved = try? JSONDecoder().decode([SavedSession].self, from: data) {
             accounts = saved

@@ -463,6 +463,9 @@ private struct SeerrLoginSheet: View {
                 } footer: {
                     Text("Use your Jellyfin login. The password is only sent to the request server; the app keeps just the session.")
                 }
+                if let address = SeerrClient.savedURL?.absoluteString, AddressKind.isUnencryptedInternet(address) {
+                    UnencryptedWarning(compact: false)
+                }
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
                 }
@@ -682,6 +685,9 @@ struct SeerrSettingsView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                if AddressKind.isUnencryptedInternet(url.trimmingCharacters(in: .whitespaces)) {
+                    UnencryptedWarning(compact: false)
+                }
                 Button {
                     Task { await test() }
                 } label: {
