@@ -504,44 +504,57 @@ struct MyRequestsView: View {
     @State private var needsLogin = false
     @State private var showLogin = false
     @State private var detailTarget: SeerrResult?
+    @State private var filter: Filter = .pending
+    @State private var pickedInitialFilter = false
+
+    private enum Filter: String, CaseIterable {
+        case pending = "Pending"
+        case approved = "Approved"
+        case denied = "Denied"
+
+        /// Seerr: 2 approved, 3 declined; anything else (pending, or a status newer than this app knows) counts as pending.
+        func matches(_ status: Int) -> Bool {
+            switch self {
+            case .pending: return status != 2 && status != 3
+            case .approved: return status == 2
+            case .denied: return status == 3
+            }
+        }
+    }
 
     private var client: SeerrClient? { SeerrClient(userID: store.session?.userID) }
-
-    /// Seerr: 2 approved, 3 declined; anything else (pending, or a status newer than this app knows) counts as pending.
-    private var groups: [(title: String, items: [SeerrMyRequest])] {
-        [(title: "Pending", items: requests.filter { $0.status != 2 && $0.status != 3 }),
-         (title: "Approved", items: requests.filter { $0.status == 2 }),
-         (title: "Denied", items: requests.filter { $0.status == 3 })]
-            .filter { !$0.items.isEmpty }
-    }
+    private var shown: [SeerrMyRequest] { requests.filter { filter.matches($0.status) } }
 
     var body: some View {
         List {
-            ForEach(groups, id: \.title) { group in
-                Section {
-                    ForEach(group.items) { request in
-                        HStack(spacing: 12) {
-                            ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3)
-                                .frame(width: 50)
-                            Text(request.title)
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                                .lineLimit(2)
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.text3)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { detailTarget = request.asResult }
-                        .listRowBackground(Color.clear)
-                    }
-                } header: {
-                    Text(group.title)
-                        .font(.system(size: 15, weight: .bold))
+            ForEach(shown) { request in
+                HStack(spacing: 12) {
+                    ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3)
+                        .frame(width: 50)
+                    Text(request.title)
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .textCase(nil)
+                        .lineLimit(2)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text3)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { detailTarget = request.asResult }
+                .listRowBackground(Color.clear)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !requests.isEmpty {
+                Picker("", selection: $filter) {
+                    ForEach(Filter.allCases, id: \.self) { option in
+                        Text("\(option.rawValue) (\(requests.filter { option.matches($0.status) }.count))").tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
         }
         .navigationDestination(item: $detailTarget) { target in
@@ -569,6 +582,8 @@ struct MyRequestsView: View {
                 ProgressView()
             } else if requests.isEmpty {
                 ContentUnavailableView("No requests yet", systemImage: "tray")
+            } else if shown.isEmpty {
+                ContentUnavailableView("Nothing \(filter.rawValue.lowercased())", systemImage: "tray")
             }
         }
         .refreshable { await load() }
@@ -592,6 +607,13 @@ struct MyRequestsView: View {
         do {
             requests = try await client.myRequests()
             errorMessage = nil
+            // First load: open on the first tab that has something in it.
+            if !pickedInitialFilter {
+                pickedInitialFilter = true
+                if shown.isEmpty, let first = Filter.allCases.first(where: { option in requests.contains { option.matches($0.status) } }) {
+                    filter = first
+                }
+            }
         } catch {
             if case SeerrError.notSignedIn = error {
                 needsLogin = true
