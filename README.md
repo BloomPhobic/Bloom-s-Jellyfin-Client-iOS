@@ -6,7 +6,7 @@ A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in
 
 - Direct play through mpv (hardware decoding, HDR10 passthrough, ASS/PGS subtitles and external subtitle files, audio and subtitle track selection)
 - A full player: auto-hiding controls, skip intro and credits, play next episode automatically, an episode list and a subtitle panel (track, size, style, timing) inside the player, and watch progress synced to the server
-- Playback speed (0.5× to 2×), and hold the left or right side of the screen to play faster (2× by default)
+- Playback speed (0.5× to 4×), and hold the left or right side of the screen to play faster (2× by default)
 - Chapters, preview pictures while scrubbing (when the server has made trickplay images), pinch to fill the screen, and lock screen and Control Center controls
 - Picture in picture: swipe home and the video carries on in a floating window
 - Bigger read-ahead for streaming: up to 1 GB kept on the phone (capped by free space), so slow patches on mobile data don't pause the video
@@ -16,8 +16,12 @@ A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in
 - Library grids with sort and filters, show pages with seasons and episodes, cast and "More like this" rows, person pages, search (best title match first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
 - Downloads: original files only (never transcoded), downloaded in the background, Wi-Fi only unless mobile data is allowed, played offline in the same player, with offline progress synced when the connection returns; long-press a download to mark it watched or unwatched, also offline
 - Accent colour setting
+- iPad layout (full screen), with keyboard shortcuts in the player (space, left and right arrows)
+- Favourites and recommendations on Home, and downloads of every account on the device in one list
+- Requests: ask for movies and shows that aren't on the server yet, through your own [Seerr](https://github.com/seerr-team/seerr) server (optional, off until you enter its address)
+- An Admin tab for Jellyfin administrators: server info, per-library scans, restart, who is watching, and approve or decline Seerr requests
 
-Planned: an iPad layout. Lower-quality streaming and transcoding are deliberately not planned: the app only plays original files.
+Lower-quality streaming and transcoding are deliberately not planned: the app only plays original files.
 
 ## Install
 
@@ -51,6 +55,6 @@ The app's own licence (MPL 2.0) and the licence of every library it includes are
 
 ## Privacy
 
-The app talks only to the Jellyfin servers you add, and collects nothing. See the [privacy policy](https://bloomphobic.github.io/Bloom-s-Jellyfin-Client-iOS/privacy.html).
+The app talks only to the Jellyfin servers you add (and, if you switch on Requests, your own Seerr server), and collects nothing. Request posters are loaded from TMDB (`image.tmdb.org`). See the [privacy policy](https://bloomphobic.github.io/Bloom-s-Jellyfin-Client-iOS/privacy.html).
 
 Jellyfin is a trademark of Jellyfin, Inc. This app is not affiliated with or endorsed by the Jellyfin project.
