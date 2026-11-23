@@ -76,6 +76,11 @@ final class BrowseNavigator {
 
     var path: [BrowseRoute] = []
 
+    /// Opens a page unless it is already the one on top (a doubled tap must not stack two copies).
+    func push(_ route: BrowseRoute) {
+        if path.last != route { path.append(route) }
+    }
+
     func openSeries(id: String, name: String?) {
         if let index = path.lastIndex(where: { route in
             if case .item(let item) = route { return item.type == .series && item.id == id }

@@ -55,7 +55,12 @@ struct AdminTasksView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            // Outside the refreshable scroll view, so it only moves sideways.
+            if categories.count > 1 {
+                categoryPills
+            }
+            ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 if let errorMessage {
                     Text(errorMessage).font(.system(size: 14)).foregroundStyle(Theme.text2)
@@ -69,16 +74,12 @@ struct AdminTasksView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if categories.count > 1 {
-                categoryPills
-            }
+            .refreshable { await load() }
         }
         .themedBackground()
         .tabBarClearance()
         .navigationTitle("Scheduled tasks")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
         .task {
             // Poll while the page is open: quickly while something runs, slowly otherwise.
             while !Task.isCancelled {

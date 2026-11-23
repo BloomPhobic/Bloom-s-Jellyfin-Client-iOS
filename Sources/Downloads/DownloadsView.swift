@@ -83,7 +83,7 @@ struct DownloadsView: View {
                 }
 
                 if !movies.isEmpty {
-                    posterRow("Movies") {
+                    posterGrid("Movies") {
                         ForEach(movies) { record in
                             Button {
                                 play(record)
@@ -109,7 +109,7 @@ struct DownloadsView: View {
                 }
 
                 if !shows.isEmpty {
-                    posterRow("Shows") {
+                    posterGrid("Shows") {
                         ForEach(shows) { show in
                             NavigationLink(value: DownloadsRoute.show(id: show.id, name: show.name)) {
                                 ShowCard(show: show)
@@ -131,16 +131,14 @@ struct DownloadsView: View {
         .foreignDeleteDialog($pendingForeign)
     }
 
-    /// A title with a sideways-scrolling row of poster cards under it.
-    private func posterRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    /// A title with a grid of poster cards under it; the page scrolls down as a whole.
+    private func posterGrid<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle(text: title)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 14) {
-                    content()
-                }
-                .padding(.horizontal, 16)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14, alignment: .top)], spacing: 18) {
+                content()
             }
+            .padding(.horizontal, 16)
         }
     }
 
@@ -418,17 +416,15 @@ private struct DownloadPosterCard: View {
     var owner: String?
 
     var body: some View {
-        let width = 130 * Metrics.scale
         VStack(alignment: .leading, spacing: 5) {
             ArtworkFrame(url: poster, aspectRatio: 2 / 3, cornerRadius: 14)
-                .frame(width: width)
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-                .frame(width: width, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Text(subtitle)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text3)
@@ -447,7 +443,7 @@ private struct DownloadPosterCard: View {
                     .background(Capsule().fill(Theme.raised2))
             }
         }
-        .frame(width: width, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

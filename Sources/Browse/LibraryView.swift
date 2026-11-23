@@ -6,6 +6,7 @@ struct LibraryView: View {
     let api: LibraryAPI
     let parent: BaseItemDto
 
+    @Environment(BrowseNavigator.self) private var navigator
     @State private var query: LibraryQuery
     /// Only this genre, when opened from a genre link. Not saved with the library's other options.
     @State private var genre: String?
@@ -45,7 +46,9 @@ struct LibraryView: View {
             }
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(items, id: \.id) { item in
-                    NavigationLink(value: BrowseRoute.item(item)) {
+                    Button {
+                        navigator.push(.item(item))
+                    } label: {
                         PosterCard(item: item, api: api)
                     }
                     .buttonStyle(PressableStyle())
