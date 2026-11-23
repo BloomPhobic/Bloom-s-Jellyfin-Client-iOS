@@ -64,21 +64,21 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("Downloads", value: DownloadStore.format(DownloadStore.shared.usedBytes(userID: store.session?.userID)))
+                    LabeledContent("Downloads", value: DownloadStore.format(DownloadStore.shared.usedBytes(userID: nil)))
                     Toggle("Download over mobile data", isOn: $downloadOverCellular)
                         .onChange(of: downloadOverCellular) {
                             DownloadStore.shared.cellularSettingChanged()
                         }
-                    if !DownloadStore.shared.list(for: store.session?.userID).isEmpty {
+                    if !DownloadStore.shared.list(for: nil).isEmpty {
                         Button("Delete all downloads", role: .destructive) {
                             confirmDeleteDownloads = true
                         }
                         .confirmationDialog("Delete all downloads?", isPresented: $confirmDeleteDownloads, titleVisibility: .visible) {
                             Button("Delete all", role: .destructive) {
-                                DownloadStore.shared.deleteAll(userID: store.session?.userID)
+                                DownloadStore.shared.deleteAll(userID: nil)
                             }
                         } message: {
-                            Text("Everything this account downloaded is removed from this iPhone. Nothing changes on the server.")
+                            Text(DownloadStore.shared.message("Everything downloaded on this iPhone is removed, whoever downloaded it. Nothing changes on the server.", for: DownloadStore.shared.list(for: nil), currentUserID: store.session?.userID))
                         }
                     }
                 } header: {

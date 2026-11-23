@@ -573,9 +573,18 @@ final class SessionStore {
         }
     }
 
+    /// The admin flag is remembered per account, so the Admin tab is still there when the check can't
+    /// run (offline, or right after a crash) instead of vanishing until the next launch.
+    private static func adminKey(_ userID: String) -> String { "isAdmin.\(userID)" }
+
+    private func cachedAdmin(_ userID: String?) -> Bool {
+        guard let userID else { return false }
+        return UserDefaults.standard.bool(forKey: Self.adminKey(userID))
+    }
+
     private func activate(_ account: SavedSession, checked: Bool) {
         session = account
-        isAdmin = false
+        isAdmin = cachedAdmin(account.userID)
         sessionChecked = checked
         UserDefaults.standard.set(account.userID, forKey: Self.currentUserKey)
         rebuildClient()
@@ -616,6 +625,7 @@ final class SessionStore {
         }
         let currentID = UserDefaults.standard.string(forKey: Self.currentUserKey)
         session = accounts.first { $0.userID == currentID } ?? accounts.first
+        isAdmin = cachedAdmin(session?.userID)
         if let session {
             AppLog.shared.log("Restored session for \(session.userName) (\(accounts.count) account(s))")
         }
@@ -636,6 +646,7 @@ final class SessionStore {
                let policy = user["Policy"] as? [String: Any] {
                 canDownload = policy["EnableContentDownloading"] as? Bool ?? true
                 isAdmin = policy["IsAdministrator"] as? Bool ?? false
+                UserDefaults.standard.set(isAdmin, forKey: Self.adminKey(current.userID))
             }
             if status == 401 || status == 403 {
                 AppLog.shared.log("The sign-in for \(current.userName) is no longer valid (HTTP \(status)). Please sign in again.", level: .warning)

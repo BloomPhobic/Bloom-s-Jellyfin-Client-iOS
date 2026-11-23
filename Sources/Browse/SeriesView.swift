@@ -52,17 +52,21 @@ struct SeriesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        .topControls(leading: {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .buttonStyle(CircleButtonStyle(size: 36))
+                .accessibilityLabel("Back")
             }
-            .buttonStyle(CircleButtonStyle(size: 36))
-            .accessibilityLabel("Back")
-        }) {
-            HStack(spacing: 10) {
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1)
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if let series {
                     if !episodes.isEmpty {
                         Button {

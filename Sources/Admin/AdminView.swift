@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Admins only: server facts, per-library scan, who is watching, and the Seerr requests waiting for an answer.
+/// Admins only: server facts, per-library scan, who is watching, and tiles for the other admin pages.
 struct AdminView: View {
     @Environment(SessionStore.self) private var store
     @State private var server = ServerInfo()
@@ -86,7 +86,6 @@ struct AdminView: View {
                     stats
                     librariesSection
                     if !watching.isEmpty { watchingSection }
-                    requestsSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -148,52 +147,40 @@ struct AdminView: View {
         .buttonStyle(.plain)
     }
 
-    /// Pages for the rest of the server's admin jobs, kept off the dashboard so it stays short.
+    /// Pages for the rest of the server's admin jobs, as tiles like the libraries, so the dashboard stays short.
     private var manageSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("Manage")
-            VStack(spacing: 0) {
-                manageLink("Scheduled tasks", "Run or stop scans and clean-ups", "clock.arrow.circlepath") { AdminTasksView() }
-                manageDivider
-                manageLink("Activity", "Sign-ins, playback and failures", "list.bullet.rectangle") { AdminActivityView() }
-                manageDivider
-                manageLink("Devices", "Signed-in devices; remove one", "iphone.gen3") { AdminDevicesView() }
-                manageDivider
-                manageLink("Users", "Accounts and when they were last active", "person.2.fill") { AdminUsersView() }
-                manageDivider
-                manageLink("Server logs", "Read the log files", "doc.text.magnifyingglass") { AdminLogsView() }
+            LazyVGrid(columns: columns, spacing: 12) {
+                manageTile("Scheduled tasks", "Scans and clean-ups", "clock.arrow.circlepath") { AdminTasksView() }
+                manageTile("Requests", pending.isEmpty ? "Approve or decline" : "\(pending.count) waiting", "tray.fill") { AdminRequestsView() }
+                manageTile("Activity", "Sign-ins and playback", "list.bullet.rectangle") { AdminActivityView() }
+                manageTile("Devices", "Signed-in devices", "iphone.gen3") { AdminDevicesView() }
+                manageTile("Users", "Accounts and last seen", "person.2.fill") { AdminUsersView() }
+                manageTile("Server logs", "Read the log files", "doc.text.magnifyingglass") { AdminLogsView() }
             }
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
         }
     }
 
-    private var manageDivider: some View {
-        Divider().overlay(Theme.line).padding(.leading, 62)
-    }
-
-    private func manageLink<Destination: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder destination: () -> Destination) -> some View {
+    private func manageTile<Destination: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder destination: () -> Destination) -> some View {
         let page = destination()
         return NavigationLink {
             page
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(width: 36, height: 36)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.accent.opacity(0.15)))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.text3).lineLimit(1)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: icon).foregroundStyle(Theme.accent)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text3)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text3)
+                Text(title).font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(subtitle).font(.system(size: 13)).foregroundStyle(Theme.text3).lineLimit(1)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
         }
         .buttonStyle(.plain)
     }
@@ -264,36 +251,6 @@ struct AdminView: View {
                         Text("\(watcher.user) · \(watcher.device)").font(.system(size: 12)).foregroundStyle(Theme.text3).lineLimit(1)
                     }
                     Spacer()
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.raised))
-            }
-        }
-    }
-
-    private var requestsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Pending requests")
-            if let pendingNote {
-                Text(pendingNote).font(.system(size: 14)).foregroundStyle(Theme.text2)
-            } else if pending.isEmpty {
-                Text("Nothing waiting.").font(.system(size: 14)).foregroundStyle(Theme.text2)
-            }
-            ForEach(pending) { request in
-                HStack(spacing: 12) {
-                    ArtworkFrame(url: request.posterURL, aspectRatio: 2 / 3).frame(width: 44)
-                    Text(request.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2)
-                    Spacer()
-                    Button { Task { await answer(request, approve: true) } } label: {
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 30)).foregroundStyle(.green)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Approve")
-                    Button { Task { await answer(request, approve: false) } } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 30)).foregroundStyle(.red)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Decline")
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.raised))
@@ -391,18 +348,6 @@ struct AdminView: View {
     }
 
     // MARK: Actions
-
-    private func answer(_ request: SeerrMyRequest, approve: Bool) async {
-        do {
-            try await seerr?.resolve(request.id, approve: approve)
-            pending.removeAll { $0.id == request.id }
-            message = approve ? "Approved “\(request.title)”" : "Declined “\(request.title)”"
-        } catch SeerrError.http(403) {
-            message = "Your Seerr account can't manage requests."
-        } catch {
-            message = error.localizedDescription
-        }
-    }
 
     /// id nil scans everything; otherwise only that library.
     private func scan(id: String?, name: String) async {

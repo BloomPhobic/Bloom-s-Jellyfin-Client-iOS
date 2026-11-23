@@ -40,16 +40,22 @@ struct ItemDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        .topControls(leading: {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .buttonStyle(CircleButtonStyle(size: 36))
+                .accessibilityLabel("Back")
             }
-            .buttonStyle(CircleButtonStyle(size: 36))
-            .accessibilityLabel("Back")
-        }, trailing: { EmptyView() })
+            ToolbarItem(placement: .principal) {
+                // The title is on the page itself.
+                Color.clear.frame(width: 1, height: 1)
+            }
+        }
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
             // Show the new resume position and watched state.

@@ -95,7 +95,7 @@ struct DownloadsView: View {
             if !movies.isEmpty {
                 Section("Movies") {
                     ForEach(movies) { record in
-                        DownloadedItemButton(record: record, play: play)
+                        DownloadedItemButton(record: record, play: play, requestDelete: requestDelete)
                     }
                 }
             }
@@ -107,17 +107,22 @@ struct DownloadsView: View {
                             ShowRow(show: show)
                         }
                         .swipeActions {
-                            Button(role: .destructive) {
+                            Button {
                                 downloads.deleteOrAsk(show.episodes, currentUserID: store.session?.userID) { pendingForeign = $0 }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            .tint(.red)
                         }
                     }
                 }
             }
         }
         .foreignDeleteDialog($pendingForeign)
+    }
+
+    private func requestDelete(_ record: DownloadRecord) {
+        downloads.deleteOrAsk([record], currentUserID: store.session?.userID) { pendingForeign = $0 }
     }
 
     private func play(_ record: DownloadRecord) {
@@ -386,6 +391,7 @@ private struct ShowDownloadsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
     @State private var selectedSeason: Int?
+    @State private var pendingForeign: [DownloadRecord] = []
 
     private var episodes: [DownloadRecord] {
         DownloadStore.shared.episodes(seriesID: seriesID, userID: nil)
@@ -404,6 +410,10 @@ private struct ShowDownloadsView: View {
             let name = list.first?.item.seasonName ?? (number == 0 ? "Specials" : "Season \(number)")
             return Season(id: number, name: name, episodes: list)
         }
+    }
+
+    private func requestDelete(_ record: DownloadRecord) {
+        DownloadStore.shared.deleteOrAsk([record], currentUserID: store.session?.userID) { pendingForeign = $0 }
     }
 
     /// The season chosen with the pills, or the first one while none is chosen (or it was emptied).
@@ -450,11 +460,12 @@ private struct ShowDownloadsView: View {
             if let season = shownSeason {
                 Section(seasons.count > 1 ? "" : season.name) {
                     ForEach(season.episodes) { record in
-                        DownloadedItemButton(record: record, play: play)
+                        DownloadedItemButton(record: record, play: play, requestDelete: requestDelete)
                     }
                 }
             }
         }
+        .foreignDeleteDialog($pendingForeign)
         .themedBackground()
         .tabBarClearance()
         .navigationTitle(name)
@@ -515,13 +526,8 @@ struct ForeignDeleteDialog: ViewModifier {
 private struct DownloadedItemButton: View {
     let record: DownloadRecord
     let play: (DownloadRecord) -> Void
-
-    @Environment(SessionStore.self) private var store
-    @State private var pendingForeign: [DownloadRecord] = []
-
-    private func requestDelete() {
-        DownloadStore.shared.deleteOrAsk([record], currentUserID: store.session?.userID) { pendingForeign = $0 }
-    }
+    /// Handled by the list that owns the row (it asks first when another account made the download).
+    let requestDelete: (DownloadRecord) -> Void
 
     var body: some View {
         Button {
@@ -530,13 +536,14 @@ private struct DownloadedItemButton: View {
             DownloadedRow(record: record)
         }
         .buttonStyle(.plain)
-        .foreignDeleteDialog($pendingForeign)
         .swipeActions {
-            Button(role: .destructive) {
-                requestDelete()
+            // Not role: .destructive, which makes the row vanish before anything is confirmed.
+            Button {
+                requestDelete(record)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+            .tint(.red)
         }
         .contextMenu {
             Button {
@@ -546,7 +553,7 @@ private struct DownloadedItemButton: View {
                       systemImage: record.isWatched ? "eye.slash" : "checkmark.circle")
             }
             Button(role: .destructive) {
-                requestDelete()
+                requestDelete(record)
             } label: {
                 Label("Delete download", systemImage: "trash")
             }
