@@ -29,6 +29,14 @@ struct SeriesView: View {
     @State private var pendingForeign: [DownloadRecord] = []
 
     var body: some View {
+        page
+            .foreignDeleteDialog($pendingForeign)
+            // The selection bar takes the floating tab bar's place while selecting.
+            .onChange(of: selecting) { TabBarState.shared.isHidden = selecting }
+            .onDisappear { TabBarState.shared.isHidden = false }
+    }
+
+    private var page: some View {
         ScrollView {
             if let series {
                 content(series)
@@ -111,10 +119,6 @@ struct SeriesView: View {
                 }
             }
         }
-        .foreignDeleteDialog($pendingForeign)
-        // The selection bar takes the floating tab bar's place while selecting.
-        .onChange(of: selecting) { TabBarState.shared.isHidden = selecting }
-        .onDisappear { TabBarState.shared.isHidden = false }
         .task {
             guard series == nil else { return }
             await loadSeries()
