@@ -112,6 +112,9 @@ struct SeriesView: View {
             }
         }
         .foreignDeleteDialog($pendingForeign)
+        // The selection bar takes the floating tab bar's place while selecting.
+        .onChange(of: selecting) { TabBarState.shared.isHidden = selecting }
+        .onDisappear { TabBarState.shared.isHidden = false }
         .task {
             guard series == nil else { return }
             await loadSeries()
@@ -415,6 +418,9 @@ struct SeriesView: View {
         .background(RoundedRectangle(cornerRadius: 18).fill(Theme.raised))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1))
         .padding(.horizontal, 16)
+        // Not stretched across a wide iPad screen.
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 

@@ -457,6 +457,15 @@ final class SessionStore {
         return data
     }
 
+    /// Approves a Quick Connect code shown on another device, for the signed-in account.
+    func authorizeQuickConnect(code: String) async throws -> Bool {
+        guard code.count == 6, code.allSatisfy(\.isNumber) else { return false }
+        let data = try await adminCall("QuickConnect/Authorize?code=\(code)", method: "POST")
+        let answer = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        AppLog.shared.log("Quick Connect authorize answered: \(answer.isEmpty ? "(empty)" : answer)")
+        return answer != "false"
+    }
+
     // MARK: - Profile
 
     /// Changes the current account's password. The saved sign-in is a token, so it stays valid.

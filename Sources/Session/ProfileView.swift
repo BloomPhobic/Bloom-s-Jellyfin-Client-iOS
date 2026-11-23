@@ -7,6 +7,7 @@ import UIKit
 struct ProfileView: View {
     @Environment(SessionStore.self) private var store
 
+    @State private var showAuthorize = false
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var pictureMessage: (text: String, isError: Bool)?
     @State private var isWorkingOnPicture = false
@@ -108,12 +109,26 @@ struct ProfileView: View {
             }
 
             Section {
+                Button {
+                    showAuthorize = true
+                } label: {
+                    Label("Authorize Quick Connect", systemImage: "qrcode.viewfinder")
+                }
+            } footer: {
+                Text("Sign in a TV or another device by typing the code it shows.")
+            }
+
+            Section {
                 Button("Sign out", role: .destructive) {
                     Task { await store.signOut() }
                 }
             } footer: {
                 Text("Signs out this account on this iPhone. Other accounts stay signed in.")
             }
+        }
+        .sheet(isPresented: $showAuthorize) {
+            QuickConnectAuthorizeView()
+                .environment(store)
         }
         .themedBackground()
         .navigationTitle("Profile")

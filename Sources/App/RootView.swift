@@ -45,6 +45,7 @@ struct RootView: View {
     @State private var downloadsReset = 0
     @State private var homeScrollTop = 0
     private let keyboard = KeyboardState.shared
+    private let tabBarState = TabBarState.shared
 
     private var showsAdmin: Bool { store.session != nil && store.isAdmin }
 
@@ -83,7 +84,7 @@ struct RootView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if !keyboard.isVisible {
+            if !keyboard.isVisible && !tabBarState.isHidden {
             FloatingTabBar(selection: $selection, showsAdmin: showsAdmin) { tab in
                 // Tapping the current tab again goes back to its first page.
                 withAnimation {
@@ -103,6 +104,7 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: keyboard.isVisible)
+        .animation(.easeInOut(duration: 0.2), value: tabBarState.isHidden)
         .overlay(alignment: .top) {
             StatusBanner()
         }
@@ -189,12 +191,23 @@ extension View {
 /// space shrinks to a little room under the field being typed in.
 private struct TabBarClearance: ViewModifier {
     private let keyboard = KeyboardState.shared
+    private let tabBarState = TabBarState.shared
 
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: keyboard.isVisible ? 72 : 80)
+            // Hidden bar (episode selection): just a little room, the page's own bar takes its place.
+            Color.clear.frame(height: tabBarState.isHidden ? 8 : (keyboard.isVisible ? 72 : 80))
         }
     }
+}
+
+/// Pages that bring their own bottom bar (episode selection) hide the floating tab bar through this.
+@MainActor
+@Observable
+final class TabBarState {
+    static let shared = TabBarState()
+    var isHidden = false
+    private init() {}
 }
 
 /// Whether the on-screen keyboard is showing.

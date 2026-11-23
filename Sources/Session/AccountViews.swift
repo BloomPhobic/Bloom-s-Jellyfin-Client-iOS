@@ -32,6 +32,7 @@ struct AccountMenu: View {
 
     var body: some View {
         Button {
+            AppLog.shared.log("Account button tapped")
             showSwitcher = true
         } label: {
             AccountAvatar(
@@ -54,6 +55,7 @@ struct AccountMenu: View {
 private struct AccountSwitcherSheet: View {
     @Environment(SessionStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var showAuthorize = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -77,6 +79,7 @@ private struct AccountSwitcherSheet: View {
                         accountCard(account)
                     }
                     addCard
+                    authorizeCard
                 }
             }
             .scrollIndicators(.hidden)
@@ -101,6 +104,39 @@ private struct AccountSwitcherSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.surface)
+        .sheet(isPresented: $showAuthorize) {
+            QuickConnectAuthorizeView()
+                .environment(store)
+        }
+        .onAppear { AppLog.shared.log("Account sheet shown") }
+    }
+
+    private var authorizeCard: some View {
+        Button {
+            showAuthorize = true
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "qrcode.viewfinder")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 52, height: 52)
+                    .background(Circle().fill(Theme.raised2))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Authorize Quick Connect")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Sign in a TV or another device")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.text3)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        }
+        .buttonStyle(PressableStyle())
     }
 
     private func accountCard(_ account: SessionStore.SavedSession) -> some View {

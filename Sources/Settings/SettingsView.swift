@@ -21,11 +21,16 @@ struct SettingsView: View {
                         ConnectionView()
                             .tabBarClearance()
                     } label: {
-                        LabeledContent("Connection") {
+                        // A plain HStack: LabeledContent with a Label grew absurdly tall on iPad.
+                        HStack {
+                            Text("Connection")
+                            Spacer()
                             if let route = store.route {
                                 Label(route.kind.label, systemImage: route.kind.systemImage)
+                                    .foregroundStyle(.secondary)
                             } else {
                                 Text(store.server == nil ? "No server" : "Not connected")
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
