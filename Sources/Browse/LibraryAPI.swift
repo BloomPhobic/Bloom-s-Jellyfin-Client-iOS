@@ -134,11 +134,11 @@ struct LibraryAPI {
         if let minScore = query.minScore {
             parameters.minCommunityRating = Double(minScore)
         }
+        // By video width: 4K is 3840 wide, HD (720p) 1280 and up. Wide-screen crops keep their full width.
         if query.only4K {
-            parameters.is4K = true
-        }
-        if query.onlyHD {
-            parameters.isHD = true
+            parameters.minWidth = 3800
+        } else if query.onlyHD {
+            parameters.minWidth = 1280
         }
         let result = try await client.send(Paths.getItems(parameters: parameters)).value
         return (result.items ?? [], result.totalRecordCount ?? 0)
