@@ -192,6 +192,8 @@ private struct AccountSwitcherSheet: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
+            // The stroke alone isn't tappable; make the whole box the button.
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(PressableStyle())
     }

@@ -4,7 +4,10 @@ import SwiftUI
 /// Searches movies, shows and episodes as you type.
 struct SearchView: View {
     let api: LibraryAPI
+    /// Changes when the Search tab is tapped again: clear the search and show the first page.
+    var resetToken = 0
 
+    @State private var searchActive = false
     @State private var query = ""
     @State private var results: [BaseItemDto] = []
     @State private var searchedTerm = ""
@@ -58,8 +61,15 @@ struct SearchView: View {
                 }
             }
         }
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Movies, shows and episodes")
+        .searchable(text: $query, isPresented: $searchActive, placement: .navigationBarDrawer(displayMode: .always), prompt: "Movies, shows and episodes")
         .navigationTitle("Search")
+        .onChange(of: resetToken) {
+            query = ""
+            results = []
+            searchedTerm = ""
+            errorMessage = nil
+            searchActive = false
+        }
         .onChange(of: query) {
             // Clear at once so the old list never shows under the empty-state placeholder.
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

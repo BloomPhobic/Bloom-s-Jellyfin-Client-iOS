@@ -19,6 +19,7 @@ struct LibraryView: View {
     @State private var searchText = ""
     /// The search text after a short pause in typing.
     @State private var searchTerm = ""
+    @State private var showFilters = false
 
     private static let pageSize = 100
     private let columns = [GridItem(.adaptive(minimum: 105), spacing: 12, alignment: .top)]
@@ -74,7 +75,7 @@ struct LibraryView: View {
                 ContentUnavailableView(
                     errorMessage == nil ? "Nothing here" : "Couldn't load",
                     systemImage: errorMessage == nil ? "film.stack" : "exclamationmark.triangle",
-                    description: Text(errorMessage ?? (!searchTerm.isEmpty ? "Nothing matches \"\(searchTerm)\"." : query.unplayedOnly || query.favouritesOnly || genre != nil ? "Try turning off the filters." : ""))
+                    description: Text(errorMessage ?? (!searchTerm.isEmpty ? "Nothing matches \"\(searchTerm)\"." : query.unplayedOnly || query.favouritesOnly || query.hasExtraFilters || genre != nil ? "Try turning off the filters." : ""))
                 )
             }
         }
@@ -88,9 +89,19 @@ struct LibraryView: View {
         .navigationTitle(parent.name ?? "Library")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    showFilters = true
+                } label: {
+                    Image(systemName: query.hasExtraFilters ? "slider.horizontal.3" : "slider.horizontal.3")
+                        .symbolVariant(query.hasExtraFilters ? .fill : .none)
+                }
+                .accessibilityLabel("Filters")
                 optionsMenu
             }
+        }
+        .sheet(isPresented: $showFilters) {
+            LibraryFiltersView(parent: parent, userID: api.userID, query: $query, total: total)
         }
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search \(parent.name ?? "this library")")
         .task(id: searchText) {
@@ -143,6 +154,24 @@ struct LibraryView: View {
                 }
                 if query.favouritesOnly {
                     OptionChip(title: "Favourites") { query.favouritesOnly = false }
+                }
+                ForEach(query.genres, id: \.self) { name in
+                    OptionChip(title: name) { query.genres.removeAll { $0 == name } }
+                }
+                ForEach(query.decades, id: \.self) { decade in
+                    OptionChip(title: "\(decade)s") { query.decades.removeAll { $0 == decade } }
+                }
+                ForEach(query.ratings, id: \.self) { rating in
+                    OptionChip(title: rating) { query.ratings.removeAll { $0 == rating } }
+                }
+                if let score = query.minScore {
+                    OptionChip(title: "\(score)+ score") { query.minScore = nil }
+                }
+                if query.only4K {
+                    OptionChip(title: "4K") { query.only4K = false }
+                }
+                if query.onlyHD {
+                    OptionChip(title: "HD") { query.onlyHD = false }
                 }
                 Button("Reset") {
                     query = LibraryQuery()

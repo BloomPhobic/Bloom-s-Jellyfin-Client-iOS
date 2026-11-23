@@ -118,8 +118,27 @@ struct LibraryAPI {
         if query.favouritesOnly {
             parameters.isFavorite = true
         }
-        if let genre {
-            parameters.genres = [genre]
+        var allGenres = query.genres
+        if let genre, !allGenres.contains(genre) {
+            allGenres.append(genre)
+        }
+        if !allGenres.isEmpty {
+            parameters.genres = allGenres
+        }
+        if !query.decades.isEmpty {
+            parameters.years = query.decades.flatMap { Array($0..<($0 + 10)) }
+        }
+        if !query.ratings.isEmpty {
+            parameters.officialRatings = query.ratings
+        }
+        if let minScore = query.minScore {
+            parameters.minCommunityRating = Double(minScore)
+        }
+        if query.only4K {
+            parameters.is4K = true
+        }
+        if query.onlyHD {
+            parameters.isHD = true
         }
         let result = try await client.send(Paths.getItems(parameters: parameters)).value
         return (result.items ?? [], result.totalRecordCount ?? 0)
@@ -331,6 +350,47 @@ struct LibraryQuery: Codable, Hashable {
     var ascending = true
     var unplayedOnly = false
     var favouritesOnly = false
+    /// More filters (Filters sheet). Genres, decades and age ratings match any of the chosen values.
+    var genres: [String] = []
+    var decades: [Int] = []
+    var ratings: [String] = []
+    var minScore: Int?
+    var only4K = false
+    var onlyHD = false
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case sort, ascending, unplayedOnly, favouritesOnly, genres, decades, ratings, minScore, only4K, onlyHD
+    }
+
+    /// Settings saved by older versions lack the newer keys, so each one falls back to its default.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sort = try c.decodeIfPresent(LibrarySort.self, forKey: .sort) ?? .name
+        ascending = try c.decodeIfPresent(Bool.self, forKey: .ascending) ?? true
+        unplayedOnly = try c.decodeIfPresent(Bool.self, forKey: .unplayedOnly) ?? false
+        favouritesOnly = try c.decodeIfPresent(Bool.self, forKey: .favouritesOnly) ?? false
+        genres = try c.decodeIfPresent([String].self, forKey: .genres) ?? []
+        decades = try c.decodeIfPresent([Int].self, forKey: .decades) ?? []
+        ratings = try c.decodeIfPresent([String].self, forKey: .ratings) ?? []
+        minScore = try c.decodeIfPresent(Int.self, forKey: .minScore)
+        only4K = try c.decodeIfPresent(Bool.self, forKey: .only4K) ?? false
+        onlyHD = try c.decodeIfPresent(Bool.self, forKey: .onlyHD) ?? false
+    }
+
+    var hasExtraFilters: Bool {
+        !genres.isEmpty || !decades.isEmpty || !ratings.isEmpty || minScore != nil || only4K || onlyHD
+    }
+
+    mutating func clearExtraFilters() {
+        genres = []
+        decades = []
+        ratings = []
+        minScore = nil
+        only4K = false
+        onlyHD = false
+    }
 
     private static func key(_ libraryID: String) -> String { "library.query.\(libraryID)" }
 

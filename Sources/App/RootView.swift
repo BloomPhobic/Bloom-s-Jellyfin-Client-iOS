@@ -43,6 +43,7 @@ struct RootView: View {
     @State private var homeNavigator = BrowseNavigator()
     @State private var searchNavigator = BrowseNavigator()
     @State private var downloadsReset = 0
+    @State private var searchReset = 0
     @State private var homeScrollTop = 0
     private let keyboard = KeyboardState.shared
     private let tabBarState = TabBarState.shared
@@ -62,7 +63,7 @@ struct RootView: View {
 
             NavigationStack(path: $searchNavigator.path) {
                 SignedInGate { api in
-                    SearchView(api: api)
+                    SearchView(api: api, resetToken: searchReset)
                 }
             }
             .environment(searchNavigator)
@@ -92,7 +93,11 @@ struct RootView: View {
                     case .home:
                         homeNavigator.path = []
                         homeScrollTop += 1
-                    case .search: searchNavigator.path = []
+                    case .search:
+                        searchNavigator.path = []
+                        searchReset += 1
+                        // Also pops the Request page, which is pushed outside the path.
+                        Self.popToRootOfSelectedTab()
                     case .downloads: downloadsReset += 1
                     case .settings: Self.popToRootOfSelectedTab()
                     case .admin: Self.popToRootOfSelectedTab()
