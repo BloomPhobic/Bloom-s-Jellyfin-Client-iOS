@@ -70,55 +70,129 @@ struct DownloadsView: View {
     }
 
     private var list: some View {
-        List {
-            Section {
-                LabeledContent("On this iPhone", value: "\(DownloadStore.format(downloads.usedBytes(userID: nil))) used · \(DownloadStore.format(freeBytes)) free")
-                    .font(.subheadline)
-                if !store.isConnected {
-                    Label("You're offline. Downloads play as usual; your progress is sent to the server later.", systemImage: "wifi.slash")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.text2)
-                }
-                NavigationLink(value: DownloadsRoute.active) {
-                    ActiveDownloadsLink(records: mine.filter { $0.state != .done }, userID: store.session?.userID)
-                }
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                storageCard
+                    .padding(.horizontal, 16)
 
-            if movies.isEmpty && shows.isEmpty {
-                Section {
+                if movies.isEmpty && shows.isEmpty {
                     Text("Finished downloads appear here.")
-                        .font(.footnote)
+                        .font(.system(size: 14))
                         .foregroundStyle(Theme.text3)
+                        .padding(.horizontal, 20)
                 }
-            }
 
-            if !movies.isEmpty {
-                Section("Movies") {
-                    ForEach(movies) { record in
-                        DownloadedItemButton(record: record, play: play, requestDelete: requestDelete)
-                    }
-                }
-            }
-
-            if !shows.isEmpty {
-                Section("Shows") {
-                    ForEach(shows) { show in
-                        NavigationLink(value: DownloadsRoute.show(id: show.id, name: show.name)) {
-                            ShowRow(show: show)
-                        }
-                        .swipeActions {
+                if !movies.isEmpty {
+                    posterRow("Movies") {
+                        ForEach(movies) { record in
                             Button {
-                                downloads.deleteOrAsk(show.episodes, currentUserID: store.session?.userID) { pendingForeign = $0 }
+                                play(record)
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                MovieCard(record: record)
                             }
-                            .tint(.red)
+                            .buttonStyle(PressableStyle())
+                            .contextMenu {
+                                Button {
+                                    downloads.setWatched(record.id, !record.isWatched)
+                                } label: {
+                                    Label(record.isWatched ? "Mark unwatched" : "Mark watched",
+                                          systemImage: record.isWatched ? "eye.slash" : "checkmark.circle")
+                                }
+                                Button(role: .destructive) {
+                                    requestDelete(record)
+                                } label: {
+                                    Label("Delete download", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !shows.isEmpty {
+                    posterRow("Shows") {
+                        ForEach(shows) { show in
+                            NavigationLink(value: DownloadsRoute.show(id: show.id, name: show.name)) {
+                                ShowCard(show: show)
+                            }
+                            .buttonStyle(PressableStyle())
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    downloads.deleteOrAsk(show.episodes, currentUserID: store.session?.userID) { pendingForeign = $0 }
+                                } label: {
+                                    Label("Delete all episodes", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
             }
+            .padding(.top, 8)
         }
         .foreignDeleteDialog($pendingForeign)
+    }
+
+    /// A title with a sideways-scrolling row of poster cards under it.
+    private func posterRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle(text: title)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 14) {
+                    content()
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    /// What the downloads use against what is free, and the link to what is downloading now.
+    private var storageCard: some View {
+        let used = downloads.usedBytes(userID: nil)
+        let total = used + freeBytes
+        let fraction = total > 0 ? Double(used) / Double(total) : 0
+        let unfinished = mine.filter { $0.state != .done }
+        let wanted = unfinished.reduce(Int64(0)) { $0 + $1.totalBytes }
+        let received = unfinished.reduce(Int64(0)) { $0 + $1.receivedBytes }
+        let overall = wanted > 0 ? Double(received) / Double(wanted) : 0
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(DownloadStore.format(used))
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                Text("downloaded")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.text3)
+                Spacer()
+                Text("\(DownloadStore.format(freeBytes)) free")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text2)
+            }
+            ProgressBar(fraction: used > 0 ? max(fraction, 0.02) : 0, height: 8)
+            if !store.isConnected {
+                Label("You're offline. Downloads play as usual; your progress is sent to the server later.", systemImage: "wifi.slash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text2)
+            }
+            Divider().overlay(Theme.line)
+            NavigationLink(value: DownloadsRoute.active) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        ActiveDownloadsLink(records: unfinished, userID: store.session?.userID)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.text3)
+                    }
+                    if !unfinished.isEmpty {
+                        ProgressBar(fraction: overall, height: 4)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.raised))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
     }
 
     private func requestDelete(_ record: DownloadRecord) {
@@ -335,49 +409,84 @@ private struct ActiveDownloadsView: View {
     }
 }
 
+/// A poster with its title and a few lines under it, for the Downloads rows.
+private struct PosterCard: View {
+    let poster: URL?
+    let title: String
+    let subtitle: String
+    var accentLine: String?
+    var owner: String?
+
+    var body: some View {
+        let width = 130 * Metrics.scale
+        VStack(alignment: .leading, spacing: 5) {
+            ArtworkFrame(url: poster, aspectRatio: 2 / 3, cornerRadius: 14)
+                .frame(width: width)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(width: width, alignment: .leading)
+            Text(subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text3)
+                .lineLimit(1)
+            if let accentLine {
+                Text(accentLine)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            if let owner {
+                Text(owner)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text2)
+                    .padding(.horizontal, 8)
+                    .frame(height: 20)
+                    .background(Capsule().fill(Theme.raised2))
+            }
+        }
+        .frame(width: width, alignment: .leading)
+    }
+}
+
+private struct MovieCard: View {
+    let record: DownloadRecord
+
+    var body: some View {
+        let downloads = DownloadStore.shared
+        let _ = downloads.artworkRevision
+        PosterCard(
+            poster: downloads.posterURL(record.id),
+            title: record.item.name ?? "Movie",
+            subtitle: DownloadStore.format(record.totalBytes),
+            accentLine: record.isWatched ? nil : "Unwatched",
+            owner: downloads.owners(of: [record])
+        )
+        .id(downloads.artworkRevision)
+    }
+}
+
 /// A show on the Downloads page: poster, name, episode count and size.
-private struct ShowRow: View {
+private struct ShowCard: View {
     let show: DownloadedShow
 
     var body: some View {
         let downloads = DownloadStore.shared
         let _ = downloads.artworkRevision
         let poster = show.episodes.lazy.compactMap { downloads.posterURL($0.id) }.first
-        HStack(spacing: 12) {
-            ArtworkFrame(url: poster, aspectRatio: 2 / 3, cornerRadius: 8)
-                .frame(width: 52)
-                .id(downloads.artworkRevision)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(show.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(2)
-                Text(meta)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.text3)
-                    .lineLimit(1)
-                if let owner = DownloadStore.shared.owners(of: show.episodes) {
-                    Text(owner)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.text2)
-                        .lineLimit(1)
-                }
-                let unwatched = show.episodes.filter { !$0.isWatched }.count
-                if unwatched > 0 {
-                    Text("\(unwatched) unwatched")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
-    }
-
-    private var meta: String {
+        let unwatched = show.episodes.filter { !$0.isWatched }.count
         let count = show.episodes.count
         let size = show.episodes.reduce(Int64(0)) { $0 + $1.totalBytes }
-        return "\(count == 1 ? "1 episode" : "\(count) episodes") · \(DownloadStore.format(size))"
+        PosterCard(
+            poster: poster,
+            title: show.name,
+            subtitle: "\(count == 1 ? "1 episode" : "\(count) episodes") · \(DownloadStore.format(size))",
+            accentLine: unwatched > 0 ? "\(unwatched) unwatched" : nil,
+            owner: downloads.owners(of: show.episodes)
+        )
+        .id(downloads.artworkRevision)
     }
 }
 
