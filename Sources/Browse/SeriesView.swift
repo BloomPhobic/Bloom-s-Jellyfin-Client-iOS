@@ -26,6 +26,7 @@ struct SeriesView: View {
     @State private var selected: Set<String> = []
     @State private var isApplying = false
     @State private var toast: String?
+    @State private var pendingForeign: [DownloadRecord] = []
 
     var body: some View {
         ScrollView {
@@ -51,21 +52,17 @@ struct SeriesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .buttonStyle(CircleButtonStyle(size: 36))
-                .accessibilityLabel("Back")
+        .topControls(leading: {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
             }
-            ToolbarItem(placement: .principal) {
-                Color.clear.frame(width: 1, height: 1)
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            .buttonStyle(CircleButtonStyle(size: 36))
+            .accessibilityLabel("Back")
+        }) {
+            HStack(spacing: 10) {
                 if let series {
                     if !episodes.isEmpty {
                         Button {
@@ -110,6 +107,7 @@ struct SeriesView: View {
                 }
             }
         }
+        .foreignDeleteDialog($pendingForeign)
         .task {
             guard series == nil else { return }
             await loadSeries()
@@ -363,7 +361,7 @@ struct SeriesView: View {
                         }
                     }
                 } message: {
-                    Text("They stay on the server; only the copies on this iPhone are deleted.")
+                    Text(DownloadStore.shared.message("They stay on the server; only the copies on this iPhone are deleted.", for: records, currentUserID: store.session?.userID))
                 }
             }
         }
@@ -397,9 +395,14 @@ struct SeriesView: View {
                     selectionAction("Download", "arrow.down.circle") { await downloadSelected(chosen) }
                 }
                 selectionAction("Remove", "trash") {
-                    let ids = chosen.compactMap(\.id).filter { DownloadStore.shared.record($0) != nil }
-                    ids.forEach { DownloadStore.shared.delete($0) }
-                    return ids.isEmpty ? "None of these are downloaded" : "Removed \(Self.count(ids.count, "download"))"
+                    let found = chosen.compactMap { DownloadStore.shared.record($0.id) }
+                    if found.isEmpty { return "None of these are downloaded" }
+                    var asked = false
+                    DownloadStore.shared.deleteOrAsk(found, currentUserID: store.session?.userID) {
+                        pendingForeign = $0
+                        asked = true
+                    }
+                    return asked ? nil : "Removed \(Self.count(found.count, "download"))"
                 }
             }
         }
@@ -743,6 +746,7 @@ private struct EpisodeDownloadButton: View {
     let canDownload: Bool
     let showMessage: (String) -> Void
 
+    @Environment(SessionStore.self) private var store
     @State private var isStarting = false
     @State private var confirmRemove = false
 
@@ -763,7 +767,7 @@ private struct EpisodeDownloadButton: View {
                 DownloadStore.shared.delete(itemID)
             }
         } message: {
-            Text("It stays on the server; only the copy on this iPhone is deleted.")
+            Text(DownloadStore.shared.message("It stays on the server; only the copy on this iPhone is deleted.", for: record.map { [$0] } ?? [], currentUserID: store.session?.userID))
         }
     }
 

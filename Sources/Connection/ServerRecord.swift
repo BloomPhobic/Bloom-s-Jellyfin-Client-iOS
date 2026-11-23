@@ -25,7 +25,11 @@ enum AddressKind: Int, Comparable {
     /// A plain-http address on the internet: passwords and everything else travel unencrypted.
     /// Local network and Tailscale addresses are fine (Tailscale encrypts on its own).
     static func isUnencryptedInternet(_ address: String) -> Bool {
-        URL(string: address)?.scheme?.lowercased() == "http" && of(address) == .internet
+        guard address.lowercased().hasPrefix("http://") else { return false }
+        // Half-typed addresses ("http://", "http://e") count as internet so the warning doesn't flicker off.
+        guard let host = URL(string: address)?.host()?.lowercased(), !host.isEmpty else { return true }
+        if host != "localhost", !host.contains("."), !host.contains(":") { return true }
+        return of(address) == .internet
     }
 
     static func < (lhs: AddressKind, rhs: AddressKind) -> Bool {

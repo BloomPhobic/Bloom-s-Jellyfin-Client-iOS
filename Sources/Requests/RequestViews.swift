@@ -558,6 +558,7 @@ struct MyRequestsView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
+                .background(Theme.background)
             }
         }
         .navigationDestination(item: $detailTarget) { target in

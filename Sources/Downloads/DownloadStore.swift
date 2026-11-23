@@ -189,6 +189,32 @@ final class DownloadStore {
         return names.isEmpty ? nil : "By " + names.joined(separator: ", ")
     }
 
+    /// "Ana downloaded this." when another account on this phone made the download(s), else nil.
+    func foreignNote(for list: [DownloadRecord], currentUserID: String?) -> String? {
+        let accounts = sessionStore?.accounts ?? []
+        var names: [String] = []
+        for record in list where record.userID != currentUserID {
+            let name = record.userName ?? accounts.first { $0.userID == record.userID }?.userName
+            if let name, !names.contains(name) { names.append(name) }
+        }
+        guard !names.isEmpty else { return nil }
+        return names.joined(separator: ", ") + (list.count == 1 ? " downloaded this." : " downloaded some of these.")
+    }
+
+    /// A dialog message with the "Ana downloaded this." warning in front when it applies.
+    func message(_ base: String, for list: [DownloadRecord], currentUserID: String?) -> String {
+        [foreignNote(for: list, currentUserID: currentUserID), base].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// Deletes now, or hands the records to `ask` when another account made any of them.
+    func deleteOrAsk(_ list: [DownloadRecord], currentUserID: String?, ask: ([DownloadRecord]) -> Void) {
+        if foreignNote(for: list, currentUserID: currentUserID) == nil {
+            list.forEach { delete($0.id) }
+        } else {
+            ask(list)
+        }
+    }
+
     /// The current account's downloads; with nobody signed in, every download on the phone, so they
     /// stay watchable without a login or a connection.
     func list(for userID: String?) -> [DownloadRecord] {

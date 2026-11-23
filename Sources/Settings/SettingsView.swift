@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(ImageCache.limitKey) private var imageCacheLimit = 300
     @AppStorage(DownloadStore.cellularKey) private var downloadOverCellular = false
     @State private var confirmDeleteDownloads = false
+    @AppStorage(MediaSummary.nerdKey) private var nerdFileDetails = false
 
     private var accentHex: String {
         get { AccentStore.shared.hex }
@@ -87,6 +88,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("More file details for nerds", isOn: $nerdFileDetails)
+                } footer: {
+                    Text("Movie and episode pages show a short summary of the file. Turn this on for the full technical list: container, bitrate, every stream.")
+                }
+
+                Section {
                     LabeledContent("Image cache", value: ByteCountFormatter.string(fromByteCount: Int64(imageCacheBytes), countStyle: .file))
                     Picker("Keep up to", selection: $imageCacheLimit) {
                         ForEach(ImageCache.limitOptions, id: \.self) { megabytes in
@@ -99,7 +106,12 @@ struct SettingsView: View {
                     }
                     Button("Clear image cache") {
                         ImageCache.shared.clear()
-                        imageCacheBytes = ImageCache.shared.diskUsage
+                        imageCacheBytes = 0
+                        // URLCache updates its size a moment after clearing; re-read then.
+                        Task {
+                            try? await Task.sleep(for: .seconds(1))
+                            imageCacheBytes = ImageCache.shared.diskUsage
+                        }
                     }
                 } header: {
                     Text("Storage")

@@ -364,12 +364,9 @@ struct QuickConnectView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.accent)
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text(isSigningIn ? "Signing in…" : "Waiting for approval…")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text3)
-                }
+                Text(isSigningIn ? "Signing in…" : "Waiting for approval…")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.text3)
             } else {
                 ProgressView("Getting a code…")
             }

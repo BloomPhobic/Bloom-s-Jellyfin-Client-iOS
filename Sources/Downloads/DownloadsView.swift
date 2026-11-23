@@ -10,6 +10,7 @@ struct DownloadsView: View {
     @State private var playback: PlaybackSession?
     @State private var freeBytes: Int64 = 0
     @State private var path: [DownloadsRoute] = []
+    @State private var pendingForeign: [DownloadRecord] = []
 
     private var downloads: DownloadStore { .shared }
 
@@ -107,9 +108,7 @@ struct DownloadsView: View {
                         }
                         .swipeActions {
                             Button(role: .destructive) {
-                                for record in show.episodes {
-                                    downloads.delete(record.id)
-                                }
+                                downloads.deleteOrAsk(show.episodes, currentUserID: store.session?.userID) { pendingForeign = $0 }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -118,6 +117,7 @@ struct DownloadsView: View {
                 }
             }
         }
+        .foreignDeleteDialog($pendingForeign)
     }
 
     private func play(_ record: DownloadRecord) {
@@ -385,6 +385,7 @@ private struct ShowDownloadsView: View {
     @Environment(SessionStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
+    @State private var selectedSeason: Int?
 
     private var episodes: [DownloadRecord] {
         DownloadStore.shared.episodes(seriesID: seriesID, userID: nil)
@@ -405,6 +406,29 @@ private struct ShowDownloadsView: View {
         }
     }
 
+    /// The season chosen with the pills, or the first one while none is chosen (or it was emptied).
+    private var shownSeason: Season? {
+        seasons.first { $0.id == selectedSeason } ?? seasons.first
+    }
+
+    private var seasonPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(seasons) { season in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { selectedSeason = season.id }
+                    } label: {
+                        Pill(title: season.name, isSelected: season.id == shownSeason?.id)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityAddTraits(season.id == shownSeason?.id ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+        }
+    }
+
     var body: some View {
         List {
             if store.isConnected && store.session != nil {
@@ -417,8 +441,14 @@ private struct ShowDownloadsView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
             }
-            ForEach(seasons) { season in
-                Section(season.name) {
+            if seasons.count > 1 {
+                seasonPills
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+            if let season = shownSeason {
+                Section(seasons.count > 1 ? "" : season.name) {
                     ForEach(season.episodes) { record in
                         DownloadedItemButton(record: record, play: play)
                     }
@@ -444,7 +474,7 @@ private struct ShowDownloadsView: View {
                 }
             }
         } message: {
-            Text("Only the copies on this iPhone are deleted.")
+            Text(DownloadStore.shared.message("Only the copies on this iPhone are deleted.", for: episodes, currentUserID: store.session?.userID))
         }
         .onChange(of: episodes.isEmpty) {
             if episodes.isEmpty {
@@ -454,10 +484,44 @@ private struct ShowDownloadsView: View {
     }
 }
 
+extension View {
+    /// Asks "Ana downloaded this. Delete it anyway?" for downloads another account made; set `pending`
+    /// (usually through `DownloadStore.deleteOrAsk`) to show it.
+    func foreignDeleteDialog(_ pending: Binding<[DownloadRecord]>) -> some View {
+        modifier(ForeignDeleteDialog(pending: pending))
+    }
+}
+
+struct ForeignDeleteDialog: ViewModifier {
+    @Binding var pending: [DownloadRecord]
+    @Environment(SessionStore.self) private var store
+
+    func body(content: Content) -> some View {
+        let note = DownloadStore.shared.foreignNote(for: pending, currentUserID: store.session?.userID) ?? ""
+        let shown = Binding(get: { !pending.isEmpty }, set: { if !$0 { pending = [] } })
+        return content.confirmationDialog("Delete it anyway?", isPresented: shown, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                for record in pending {
+                    DownloadStore.shared.delete(record.id)
+                }
+            }
+        } message: {
+            Text(note)
+        }
+    }
+}
+
 /// A finished download as a row you tap to play, swipe or long-press to delete.
 private struct DownloadedItemButton: View {
     let record: DownloadRecord
     let play: (DownloadRecord) -> Void
+
+    @Environment(SessionStore.self) private var store
+    @State private var pendingForeign: [DownloadRecord] = []
+
+    private func requestDelete() {
+        DownloadStore.shared.deleteOrAsk([record], currentUserID: store.session?.userID) { pendingForeign = $0 }
+    }
 
     var body: some View {
         Button {
@@ -466,9 +530,10 @@ private struct DownloadedItemButton: View {
             DownloadedRow(record: record)
         }
         .buttonStyle(.plain)
+        .foreignDeleteDialog($pendingForeign)
         .swipeActions {
             Button(role: .destructive) {
-                DownloadStore.shared.delete(record.id)
+                requestDelete()
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -481,7 +546,7 @@ private struct DownloadedItemButton: View {
                       systemImage: record.isWatched ? "eye.slash" : "checkmark.circle")
             }
             Button(role: .destructive) {
-                DownloadStore.shared.delete(record.id)
+                requestDelete()
             } label: {
                 Label("Delete download", systemImage: "trash")
             }
@@ -638,6 +703,7 @@ struct DownloadTile: View {
     let api: LibraryAPI
     let item: BaseItemDto
 
+    @Environment(SessionStore.self) private var store
     @State private var message: String?
     @State private var confirmRemove = false
     @State private var isStarting = false
@@ -661,7 +727,8 @@ struct DownloadTile: View {
                 }
             }
         } message: {
-            Text(record?.state == .done ? "It stays on the server; only the copy on this iPhone is deleted." : "What has downloaded so far is deleted.")
+            let base = record?.state == .done ? "It stays on the server; only the copy on this iPhone is deleted." : "What has downloaded so far is deleted."
+            Text(downloads.message(base, for: record.map { [$0] } ?? [], currentUserID: store.session?.userID))
         }
         .alert("Can't download", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) {}

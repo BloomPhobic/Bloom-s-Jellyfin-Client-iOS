@@ -192,7 +192,7 @@ private struct TabBarClearance: ViewModifier {
 
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: keyboard.isVisible ? 72 : 84)
+            Color.clear.frame(height: keyboard.isVisible ? 72 : 80)
         }
     }
 }
@@ -241,10 +241,10 @@ private struct FloatingTabBar: View {
             }
         } label: {
             Image(systemName: "shield.fill")
-                .font(.system(size: 19, weight: .semibold))
+                .font(.system(size: 24, weight: .semibold))
                 .symbolEffect(.bounce, value: bounces[.admin, default: 0])
                 .foregroundStyle(isSelected ? Theme.accent : Theme.text3)
-                .frame(width: 54, height: 54)
+                .frame(width: 50, height: 50)
                 .background(Circle().fill(isSelected ? Theme.accent.opacity(0.15) : .clear))
                 .padding(5)
                 .background(Circle().fill(Theme.raised2.opacity(0.96)))
@@ -270,16 +270,12 @@ private struct FloatingTabBar: View {
                         }
                     }
                 } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: tab.icon(selected: isSelected))
-                            .font(.system(size: 19, weight: .semibold))
-                            .symbolEffect(.bounce, value: bounces[tab, default: 0])
-                        Text(tab.title)
-                            .font(.system(size: 11, weight: .semibold))
-                    }
+                    Image(systemName: tab.icon(selected: isSelected))
+                        .font(.system(size: 25, weight: .semibold))
+                        .symbolEffect(.bounce, value: bounces[tab, default: 0])
                     .foregroundStyle(isSelected ? Theme.accent : Theme.text3)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 54)
+                    .frame(height: 50)
                     .background {
                         if isSelected {
                             Capsule()

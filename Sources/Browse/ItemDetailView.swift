@@ -14,6 +14,7 @@ struct ItemDetailView: View {
     @State private var errorMessage: String?
     @State private var playback: PlaybackSession?
     @State private var showFileDetails = false
+    @AppStorage(MediaSummary.nerdKey) private var nerdFileDetails = false
 
     var body: some View {
         ScrollView {
@@ -39,22 +40,16 @@ struct ItemDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .buttonStyle(CircleButtonStyle(size: 36))
-                .accessibilityLabel("Back")
+        .topControls(leading: {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
             }
-            ToolbarItem(placement: .principal) {
-                // The title is on the page itself.
-                Color.clear.frame(width: 1, height: 1)
-            }
-        }
+            .buttonStyle(CircleButtonStyle(size: 36))
+            .accessibilityLabel("Back")
+        }, trailing: { EmptyView() })
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
             // Show the new resume position and watched state.
@@ -221,9 +216,11 @@ struct ItemDetailView: View {
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(Theme.text)
                                 }
-                                ForEach(Array(MediaSummary.lines(for: source).enumerated()), id: \.offset) { _, line in
+                                let lines: [String] = nerdFileDetails ? MediaSummary.lines(for: source) : MediaSummary.simple(for: source)
+                                let design: Font.Design = nerdFileDetails ? .monospaced : .default
+                                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                                     Text(line)
-                                        .font(.system(size: 12, design: .monospaced))
+                                        .font(.system(size: 13, design: design))
                                         .foregroundStyle(Theme.text2)
                                         .textSelection(.enabled)
                                 }
@@ -319,7 +316,8 @@ struct BackdropHeader: View {
                 LinearGradient(colors: [.clear, Theme.background], startPoint: .top, endPoint: .bottom)
                     .frame(height: 90)
             }
-            .clipped()
+            // Clip the bottom and sides only; the top must overflow so a pull-down stretches the image over the gap.
+            .mask(alignment: .bottom) { Rectangle().frame(height: height + 1000) }
     }
 }
 
@@ -691,6 +689,65 @@ enum MediaSummary {
             parts.append(subtitles == 1 ? "1 subtitle" : "\(subtitles) subtitles")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// Setting: show the full technical dump on item pages instead of the simple summary.
+    static let nerdKey = "ui.nerdFileDetails"
+
+    /// The friendly summary: size, quality, file size, and audio and subtitle languages.
+    static func simple(for source: MediaSourceInfo) -> [String] {
+        let streams = source.mediaStreams ?? []
+        var lines: [String] = []
+        if let video = streams.first(where: { $0.type == .video }) {
+            if let width = video.width, let height = video.height {
+                lines.append("Media size: \(width)x\(height)")
+            }
+            if let height = video.height {
+                lines.append("Quality: " + (height >= 2000 ? "4K" : "\(height)p"))
+            }
+        }
+        if let size = source.size {
+            lines.append("File size: " + ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+        }
+
+        var audio: [String] = []
+        for stream in streams where stream.type == .audio {
+            var text = languageName(stream.language) + " - " + (stream.codec?.uppercased() ?? "Audio")
+            if let channels = stream.channels {
+                text += channelText(channels)
+            }
+            if stream.isDefault == true { text = "Default: " + text }
+            if !audio.contains(text) { audio.append(text) }
+        }
+        if !audio.isEmpty {
+            lines.append("")
+            lines.append("Audio:")
+            lines += audio
+        }
+
+        var subtitles: [String] = []
+        for stream in streams where stream.type == .subtitle {
+            let codec = stream.codec?.lowercased() ?? ""
+            let format = ["subrip": "SRT", "pgssub": "PGS", "hdmv_pgs_subtitle": "PGS"][codec] ?? codec.uppercased()
+            let text = languageName(stream.language) + (format.isEmpty ? "" : " - " + format)
+            if !subtitles.contains(text) { subtitles.append(text) }
+        }
+        if !subtitles.isEmpty {
+            lines.append("")
+            lines.append("Subtitles:")
+            lines += subtitles
+        }
+        return lines
+    }
+
+    private static func channelText(_ channels: Int) -> String {
+        channels == 6 ? " 5.1" : channels == 8 ? " 7.1" : channels == 2 ? " 2.0" : " \(channels)ch"
+    }
+
+    private static func languageName(_ tag: String?) -> String {
+        guard let tag, !tag.isEmpty, tag.lowercased() != "und" else { return "Unknown" }
+        if let known = LanguageOption.all.first(where: { $0.matches(tag) }) { return known.name }
+        return Locale(identifier: "en").localizedString(forLanguageCode: tag)?.capitalized ?? tag.uppercased()
     }
 
     static func lines(for source: MediaSourceInfo) -> [String] {

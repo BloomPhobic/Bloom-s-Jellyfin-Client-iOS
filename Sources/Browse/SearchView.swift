@@ -60,6 +60,14 @@ struct SearchView: View {
         }
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Movies, shows and episodes")
         .navigationTitle("Search")
+        .onChange(of: query) {
+            // Clear at once so the old list never shows under the empty-state placeholder.
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                results = []
+                searchedTerm = ""
+                errorMessage = nil
+            }
+        }
         .task(id: query) {
             // Wait for a pause in typing before searching.
             try? await Task.sleep(for: .milliseconds(350))
