@@ -106,6 +106,14 @@ struct ProfileView: View {
                         .foregroundStyle(passwordMessage.isError ? Color.red : Color.secondary)
                 }
             }
+
+            Section {
+                Button("Sign out", role: .destructive) {
+                    Task { await store.signOut() }
+                }
+            } footer: {
+                Text("Signs out this account on this iPhone. Other accounts stay signed in.")
+            }
         }
         .themedBackground()
         .navigationTitle("Profile")

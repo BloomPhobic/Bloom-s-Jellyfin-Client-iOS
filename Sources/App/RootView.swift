@@ -229,13 +229,14 @@ private struct FloatingTabBar: View {
             capsule
             if showsAdmin { adminButton }
         }
-        .padding(.bottom, 6)
     }
 
     private var adminButton: some View {
         let isSelected = selection == .admin
         return Button {
-            if !isSelected {
+            if isSelected {
+                reselect(.admin)
+            } else {
                 bounces[.admin, default: 0] += 1
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { selection = .admin }
             }

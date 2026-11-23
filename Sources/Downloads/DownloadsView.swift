@@ -546,7 +546,7 @@ private struct ForeignDeleteSheet: View {
                 .frame(width: 76, height: 76)
                 .background(Circle().fill(Color.orange.opacity(0.15)))
                 .overlay(Circle().strokeBorder(Color.orange.opacity(0.5), lineWidth: 1.5))
-                .padding(.top, 8)
+                .padding(.top, 26)
             Text("Not your download")
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(Theme.text)
@@ -583,7 +583,7 @@ private struct ForeignDeleteSheet: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
-        .presentationDetents([.height(430)])
+        .presentationDetents([.height(460)])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.surface)
     }

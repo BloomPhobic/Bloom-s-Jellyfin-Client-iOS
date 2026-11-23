@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Server settings as a signal dashboard: a big gauge for the connection in use, then one compact
-/// row per address (drag to reorder), adding an address, and the account.
+/// row per address (hold and drag to reorder, swipe right to remove) and adding an address.
 struct ConnectionView: View {
     @Environment(SessionStore.self) private var store
 
@@ -15,7 +15,6 @@ struct ConnectionView: View {
             if let server = store.server {
                 gaugeSection(server)
                 addressSection(server.addresses)
-                accountSection
                 Section {
                     Button("Forget this server", role: .destructive) {
                         confirmForget = true
@@ -29,8 +28,6 @@ struct ConnectionView: View {
                     .listRowBackground(Color.clear)
             }
         }
-        // Always in reorder mode: the handles are the "drag to reorder" for addresses.
-        .environment(\.editMode, .constant(.active))
         .scrollContentBackground(.hidden)
         .themedBackground()
         .navigationTitle("Connection")
@@ -152,12 +149,24 @@ struct ConnectionView: View {
 
     private func addressSection(_ addresses: [String]) -> some View {
         Section {
-            ForEach(addresses, id: \.self) { address in
-                addressRow(address)
+            ForEach(Array(addresses.enumerated()), id: \.element) { index, address in
+                addressRow(address, index: index)
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        if addresses.count > 1 {
+                            Button(role: .destructive) {
+                                store.removeAddresses(at: IndexSet(integer: index))
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                        }
+                    }
+                    // Press and hold a row, then drop it on another to change the order.
+                    .draggable(address)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let dragged = items.first else { return false }
+                        return move(dragged, onto: address, in: addresses)
+                    }
             }
-            .onDelete { store.removeAddresses(at: $0) }
-            .onMove { store.moveAddresses(from: $0, to: $1) }
-            .deleteDisabled(addresses.count < 2)
             .listRowBackground(Theme.raised)
 
             HStack(spacing: 10) {
@@ -184,12 +193,20 @@ struct ConnectionView: View {
             } else if AddressKind.isUnencryptedInternet(newAddress.trimmingCharacters(in: .whitespaces)) {
                 UnencryptedWarning(compact: false)
             } else {
-                Text("Drag the handles to change the order. New addresses go local network first, then Tailscale, then internet.")
+                Text("Press and hold a row, then drag it to change the order; swipe right to remove one. New addresses go local network first, then Tailscale, then internet.")
             }
         }
     }
 
-    private func addressRow(_ address: String) -> some View {
+    private func move(_ dragged: String, onto target: String, in addresses: [String]) -> Bool {
+        guard dragged != target, let from = addresses.firstIndex(of: dragged), let to = addresses.firstIndex(of: target) else { return false }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            store.moveAddresses(from: IndexSet(integer: from), to: to > from ? to + 1 : to)
+        }
+        return true
+    }
+
+    private func addressRow(_ address: String, index: Int) -> some View {
         let kind = AddressKind.of(address)
         let isChosen = store.route?.address == address
         var color: Color = Theme.text3
@@ -205,7 +222,12 @@ struct ConnectionView: View {
             }
         }
         return HStack(spacing: 10) {
-            Circle().fill(color).frame(width: 9, height: 9)
+            Text("\(index + 1)")
+                .font(.system(size: 13, weight: .bold).monospacedDigit())
+                .foregroundStyle(color)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(color.opacity(0.15)))
+                .overlay(Circle().strokeBorder(color.opacity(0.6), lineWidth: 1.5))
             VStack(alignment: .leading, spacing: 2) {
                 Text(address)
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
@@ -230,23 +252,6 @@ struct ConnectionView: View {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
             }
         }
-    }
-
-    // MARK: Account
-
-    @ViewBuilder
-    private var accountSection: some View {
-        Section("Account") {
-            if let session = store.session {
-                LabeledContent("Signed in as", value: session.userName)
-                Button("Sign out", role: .destructive) {
-                    Task { await store.signOut() }
-                }
-            } else {
-                Text("Not signed in").foregroundStyle(Theme.text3)
-            }
-        }
-        .listRowBackground(Theme.raised)
     }
 
     private func add() async {

@@ -64,6 +64,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("More file details for nerds", isOn: $nerdFileDetails)
+                } footer: {
+                    Text("Movie and episode pages show a short summary of the file. Turn this on for the full technical list: container, bitrate, every stream.")
+                }
+
+                Section {
                     LabeledContent("Downloads", value: DownloadStore.format(DownloadStore.shared.usedBytes(userID: nil)))
                     Toggle("Download over mobile data", isOn: $downloadOverCellular)
                         .onChange(of: downloadOverCellular) {
@@ -85,12 +91,6 @@ struct SettingsView: View {
                     Text("Downloads")
                 } footer: {
                     Text("Downloads are the original files, so big movies can take several GB. With mobile data off, downloads wait for Wi-Fi.")
-                }
-
-                Section {
-                    Toggle("More file details for nerds", isOn: $nerdFileDetails)
-                } footer: {
-                    Text("Movie and episode pages show a short summary of the file. Turn this on for the full technical list: container, bitrate, every stream.")
                 }
 
                 Section {
