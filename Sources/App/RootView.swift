@@ -229,6 +229,7 @@ private struct FloatingTabBar: View {
             capsule
             if showsAdmin { adminButton }
         }
+        .padding(.bottom, -6)
     }
 
     private var adminButton: some View {

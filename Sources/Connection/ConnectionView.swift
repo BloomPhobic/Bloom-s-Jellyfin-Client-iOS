@@ -9,6 +9,7 @@ struct ConnectionView: View {
     @State private var addMessage: (text: String, isError: Bool)?
     @State private var isAdding = false
     @State private var confirmForget = false
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         List {
@@ -28,9 +29,17 @@ struct ConnectionView: View {
                     .listRowBackground(Color.clear)
             }
         }
+        .environment(\.editMode, $editMode)
         .scrollContentBackground(.hidden)
         .themedBackground()
         .navigationTitle("Connection")
+        .toolbar {
+            if (store.server?.addresses.count ?? 0) > 1 {
+                Button(editMode.isEditing ? "Done" : "Reorder") {
+                    withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                }
+            }
+        }
         .refreshable { await store.resolve() }
         .confirmationDialog("Forget this server?", isPresented: $confirmForget, titleVisibility: .visible) {
             Button("Sign out and forget", role: .destructive) {
@@ -160,13 +169,8 @@ struct ConnectionView: View {
                             }
                         }
                     }
-                    // Press and hold a row, then drop it on another to change the order.
-                    .draggable(address)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let dragged = items.first else { return false }
-                        return move(dragged, onto: address, in: addresses)
-                    }
             }
+            .onMove { store.moveAddresses(from: $0, to: $1) }
             .listRowBackground(Theme.raised)
 
             HStack(spacing: 10) {
@@ -193,17 +197,9 @@ struct ConnectionView: View {
             } else if AddressKind.isUnencryptedInternet(newAddress.trimmingCharacters(in: .whitespaces)) {
                 UnencryptedWarning(compact: false)
             } else {
-                Text("Press and hold a row, then drag it to change the order; swipe right to remove one. New addresses go local network first, then Tailscale, then internet.")
+                Text("Tap Reorder, then drag the handles; swipe right to remove one. New addresses go local network first, then Tailscale, then internet.")
             }
         }
-    }
-
-    private func move(_ dragged: String, onto target: String, in addresses: [String]) -> Bool {
-        guard dragged != target, let from = addresses.firstIndex(of: dragged), let to = addresses.firstIndex(of: target) else { return false }
-        withAnimation(.easeInOut(duration: 0.25)) {
-            store.moveAddresses(from: IndexSet(integer: from), to: to > from ? to + 1 : to)
-        }
-        return true
     }
 
     private func addressRow(_ address: String, index: Int) -> some View {

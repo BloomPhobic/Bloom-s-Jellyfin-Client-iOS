@@ -62,7 +62,6 @@ struct AdminUsersView: View {
                     .foregroundStyle(Theme.text3)
             }
             Spacer(minLength: 0)
-            if user.isAdmin { badge("Admin", Theme.accent) }
             if user.isDisabled { badge("Disabled", .red) }
         }
         .adminCard()

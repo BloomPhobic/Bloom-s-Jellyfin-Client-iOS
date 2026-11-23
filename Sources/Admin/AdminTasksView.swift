@@ -8,6 +8,7 @@ struct AdminTasksView: View {
     @State private var loaded = false
     @State private var errorMessage: String?
     @State private var message: String?
+    @State private var selectedCategory: String?
 
     private struct TaskRow: Identifiable {
         let id: String
@@ -29,6 +30,30 @@ struct AdminTasksView: View {
         return order
     }
 
+    /// The category chosen with the pills, or the first one while none is chosen (or it disappeared).
+    private var shownCategory: String? {
+        categories.first { $0 == selectedCategory } ?? categories.first
+    }
+
+    private var categoryPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories, id: \.self) { category in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { selectedCategory = category }
+                    } label: {
+                        Pill(title: category, isSelected: category == shownCategory)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityAddTraits(category == shownCategory ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .background(Theme.background)
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
@@ -37,15 +62,17 @@ struct AdminTasksView: View {
                 } else if loaded && tasks.isEmpty {
                     Text("No tasks.").font(.system(size: 14)).foregroundStyle(Theme.text2)
                 }
-                ForEach(categories, id: \.self) { category in
-                    AdminGroupTitle(text: category)
-                    ForEach(tasks.filter { $0.category == category }) { task in
-                        row(task)
-                    }
+                ForEach(tasks.filter { $0.category == shownCategory }) { task in
+                    row(task)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if categories.count > 1 {
+                categoryPills
+            }
         }
         .themedBackground()
         .tabBarClearance()
