@@ -410,7 +410,7 @@ private struct ActiveDownloadsView: View {
 }
 
 /// A poster with its title and a few lines under it, for the Downloads rows.
-private struct PosterCard: View {
+private struct DownloadPosterCard: View {
     let poster: URL?
     let title: String
     let subtitle: String
@@ -457,7 +457,7 @@ private struct MovieCard: View {
     var body: some View {
         let downloads = DownloadStore.shared
         let _ = downloads.artworkRevision
-        PosterCard(
+        DownloadPosterCard(
             poster: downloads.posterURL(record.id),
             title: record.item.name ?? "Movie",
             subtitle: DownloadStore.format(record.totalBytes),
@@ -479,7 +479,7 @@ private struct ShowCard: View {
         let unwatched = show.episodes.filter { !$0.isWatched }.count
         let count = show.episodes.count
         let size = show.episodes.reduce(Int64(0)) { $0 + $1.totalBytes }
-        PosterCard(
+        DownloadPosterCard(
             poster: poster,
             title: show.name,
             subtitle: "\(count == 1 ? "1 episode" : "\(count) episodes") · \(DownloadStore.format(size))",
