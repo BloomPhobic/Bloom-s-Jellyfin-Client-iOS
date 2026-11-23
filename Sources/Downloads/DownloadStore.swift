@@ -189,14 +189,20 @@ final class DownloadStore {
         return names.isEmpty ? nil : "By " + names.joined(separator: ", ")
     }
 
-    /// "Ana downloaded this." when another account on this phone made the download(s), else nil.
-    func foreignNote(for list: [DownloadRecord], currentUserID: String?) -> String? {
+    /// Names of the other accounts that made any of these downloads.
+    func foreignNames(for list: [DownloadRecord], currentUserID: String?) -> [String] {
         let accounts = sessionStore?.accounts ?? []
         var names: [String] = []
         for record in list where record.userID != currentUserID {
             let name = record.userName ?? accounts.first { $0.userID == record.userID }?.userName
             if let name, !names.contains(name) { names.append(name) }
         }
+        return names
+    }
+
+    /// "Ana downloaded this." when another account on this phone made the download(s), else nil.
+    func foreignNote(for list: [DownloadRecord], currentUserID: String?) -> String? {
+        let names = foreignNames(for: list, currentUserID: currentUserID)
         guard !names.isEmpty else { return nil }
         return names.joined(separator: ", ") + (list.count == 1 ? " downloaded this." : " downloaded some of these.")
     }

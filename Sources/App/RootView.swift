@@ -94,7 +94,7 @@ struct RootView: View {
                     case .search: searchNavigator.path = []
                     case .downloads: downloadsReset += 1
                     case .settings: Self.popToRootOfSelectedTab()
-                    case .admin: break
+                    case .admin: Self.popToRootOfSelectedTab()
                     }
                 }
             }

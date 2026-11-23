@@ -23,27 +23,15 @@ struct AdminUsersView: View {
                 } else if loaded && users.isEmpty {
                     Text("No users.").font(.system(size: 14)).foregroundStyle(Theme.text2)
                 }
-                ForEach(users) { user in
-                    HStack(spacing: 12) {
-                        Text(String(user.name.prefix(1)).uppercased())
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Theme.accent)
-                            .frame(width: 42, height: 42)
-                            .background(Circle().fill(Theme.accent.opacity(0.15)))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(user.name)
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                                .lineLimit(1)
-                            Text("Last active " + AdminDate.ago(user.lastActive))
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.text3)
-                        }
-                        Spacer(minLength: 0)
-                        if user.isAdmin { badge("Admin", Theme.accent) }
-                        if user.isDisabled { badge("Disabled", .red) }
-                    }
-                    .adminCard()
+                let admins = users.filter { $0.isAdmin }
+                let others = users.filter { !$0.isAdmin }
+                if !admins.isEmpty {
+                    AdminGroupTitle(text: "Admins · \(admins.count)")
+                    ForEach(admins) { userRow($0) }
+                }
+                if !others.isEmpty {
+                    AdminGroupTitle(text: "Users · \(others.count)")
+                    ForEach(others) { userRow($0) }
                 }
             }
             .padding(.horizontal, 16)
@@ -55,6 +43,29 @@ struct AdminUsersView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
+    }
+
+    private func userRow(_ user: UserRow) -> some View {
+        HStack(spacing: 12) {
+            Text(String(user.name.prefix(1)).uppercased())
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(user.isAdmin ? Theme.onAccent : Theme.accent)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(user.isAdmin ? Theme.accent : Theme.accent.opacity(0.15)))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(user.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Text("Last active " + AdminDate.ago(user.lastActive))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text3)
+            }
+            Spacer(minLength: 0)
+            if user.isAdmin { badge("Admin", Theme.accent) }
+            if user.isDisabled { badge("Disabled", .red) }
+        }
+        .adminCard()
     }
 
     private func badge(_ text: String, _ color: Color) -> some View {

@@ -508,17 +508,84 @@ struct ForeignDeleteDialog: ViewModifier {
     @Environment(SessionStore.self) private var store
 
     func body(content: Content) -> some View {
-        let note = DownloadStore.shared.foreignNote(for: pending, currentUserID: store.session?.userID) ?? ""
         let shown = Binding(get: { !pending.isEmpty }, set: { if !$0 { pending = [] } })
-        return content.confirmationDialog("Delete it anyway?", isPresented: shown, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                for record in pending {
+        let owners = DownloadStore.shared.foreignNames(for: pending, currentUserID: store.session?.userID)
+        let records = pending
+        return content.sheet(isPresented: shown) {
+            ForeignDeleteSheet(records: records, owners: owners) {
+                for record in records {
                     DownloadStore.shared.delete(record.id)
                 }
+                pending = []
+            } cancel: {
+                pending = []
             }
-        } message: {
-            Text(note)
         }
+    }
+}
+
+/// The warning before deleting a download another account on this phone made.
+private struct ForeignDeleteSheet: View {
+    let records: [DownloadRecord]
+    let owners: [String]
+    let confirm: () -> Void
+    let cancel: () -> Void
+
+    private var what: String {
+        if records.count == 1 {
+            return records[0].item.name ?? "this download"
+        }
+        return "\(records.count) downloads"
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(Color.orange)
+                .frame(width: 76, height: 76)
+                .background(Circle().fill(Color.orange.opacity(0.15)))
+                .overlay(Circle().strokeBorder(Color.orange.opacity(0.5), lineWidth: 1.5))
+                .padding(.top, 8)
+            Text("Not your download")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Theme.text)
+            Text("Downloaded by " + owners.joined(separator: ", "))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.orange)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(Capsule().fill(Color.orange.opacity(0.15)))
+            Text("Deleting \(what) removes it from this iPhone for everyone who uses it. It stays on the server and can be downloaded again.")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.text2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(action: confirm) {
+                Text("Delete anyway")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Capsule().fill(Color.red))
+            }
+            .buttonStyle(PressableStyle())
+            Button(action: cancel) {
+                Text("Keep it")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Capsule().fill(Theme.raised2))
+            }
+            .buttonStyle(PressableStyle())
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+        .presentationDetents([.height(430)])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.surface)
     }
 }
 
