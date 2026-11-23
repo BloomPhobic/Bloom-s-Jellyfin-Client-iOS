@@ -82,6 +82,7 @@ struct AdminView: View {
                         Text(errorMessage).font(.system(size: 14)).foregroundStyle(Theme.text2)
                     }
                     actions
+                    manageSection
                     stats
                     librariesSection
                     if !watching.isEmpty { watchingSection }
@@ -143,6 +144,56 @@ struct AdminView: View {
                 .frame(height: 46)
                 .background(Capsule().fill(Theme.raised))
                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Pages for the rest of the server's admin jobs, kept off the dashboard so it stays short.
+    private var manageSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Manage")
+            VStack(spacing: 0) {
+                manageLink("Scheduled tasks", "Run or stop scans and clean-ups", "clock.arrow.circlepath") { AdminTasksView() }
+                manageDivider
+                manageLink("Activity", "Sign-ins, playback and failures", "list.bullet.rectangle") { AdminActivityView() }
+                manageDivider
+                manageLink("Devices", "Signed-in devices; remove one", "iphone.gen3") { AdminDevicesView() }
+                manageDivider
+                manageLink("Users", "Accounts and when they were last active", "person.2.fill") { AdminUsersView() }
+                manageDivider
+                manageLink("Server logs", "Read the log files", "doc.text.magnifyingglass") { AdminLogsView() }
+            }
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.raised))
+        }
+    }
+
+    private var manageDivider: some View {
+        Divider().overlay(Theme.line).padding(.leading, 62)
+    }
+
+    private func manageLink<Destination: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder destination: () -> Destination) -> some View {
+        let page = destination()
+        return NavigationLink {
+            page
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.accent.opacity(0.15)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.text3).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.text3)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
