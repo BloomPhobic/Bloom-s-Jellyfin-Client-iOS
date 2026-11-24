@@ -13,7 +13,7 @@ A lightweight native iOS client for [Jellyfin](https://jellyfin.org), written in
 - Servers with several addresses (for example local network, Tailscale and a public domain): all are checked at the same time and the highest-priority one that answers is used, and they are checked again when the network changes. A new address is only saved once a Jellyfin server answers on it
 - Several accounts; sign in with the server's user list, a username and password, or Quick Connect; the sign-in is kept in the Keychain
 - Home screen with Continue watching, Next up, Recently added per library, watch history and library shortcuts
-- Library grids with sort and filters, show pages with seasons and episodes, cast and "More like this" rows, person pages, search (best title match first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
+- Library grids with sort and a Filters sheet (genre, decade, age rating, score, quality, on top of unplayed and favourites), show pages with seasons and episodes, cast and "More like this" rows, person pages, search (best title match first), clickable genres that open the library filtered to that genre, and watched and favourite toggles
 - Downloads: original files only (never transcoded), downloaded in the background, Wi-Fi only unless mobile data is allowed, played offline in the same player, with offline progress synced when the connection returns; long-press a download to mark it watched or unwatched, also offline
 - Accent colour setting
 - iPad layout (full screen), with keyboard shortcuts in the player (space, left and right arrows)
