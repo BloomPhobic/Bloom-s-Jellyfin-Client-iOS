@@ -17,6 +17,11 @@ struct LibraryFiltersView: View {
     @State private var decades: [Int] = []
     @State private var isLoading = true
 
+    /// Series have no video stream of their own, so a width filter would hide every show.
+    private var categories: [Category] {
+        parent.collectionType == .tvshows || parent.collectionType == .boxsets ? Category.allCases.filter { $0 != .quality } : Category.allCases
+    }
+
     private enum Category: String, CaseIterable {
         case genre = "Genre"
         case decade = "Decade"
@@ -47,7 +52,7 @@ struct LibraryFiltersView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Category.allCases, id: \.self) { item in
+                    ForEach(categories, id: \.self) { item in
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) { category = item }
                         } label: {

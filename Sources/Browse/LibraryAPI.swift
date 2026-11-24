@@ -123,13 +123,14 @@ struct LibraryAPI {
             allGenres.append(genre)
         }
         if !allGenres.isEmpty {
-            parameters.genres = allGenres
+            // The server reads these as one pipe-separated value (any of); repeated params arrive comma-joined and match nothing.
+            parameters.genres = [allGenres.joined(separator: "|")]
         }
         if !query.decades.isEmpty {
             parameters.years = query.decades.flatMap { Array($0..<($0 + 10)) }
         }
         if !query.ratings.isEmpty {
-            parameters.officialRatings = query.ratings
+            parameters.officialRatings = [query.ratings.joined(separator: "|")]
         }
         if let minScore = query.minScore {
             parameters.minCommunityRating = Double(minScore)
