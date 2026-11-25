@@ -90,25 +90,26 @@ struct RemoteImage: View {
     }
 
     var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(Theme.raised2)
-            if url == nil {
-                // The item has no artwork on the server.
-                Image(systemName: "film")
-                    .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(Theme.text3.opacity(0.6))
+        // The rectangle sets the size. The filled image is larger, so it goes in an overlay (which can't
+        // grow the view) and takes no taps (clipping doesn't clip them): on a wide screen the Home
+        // banner swallowed the account button above it.
+        Rectangle()
+            .fill(Theme.raised2)
+            .overlay {
+                if url == nil {
+                    // The item has no artwork on the server.
+                    Image(systemName: "film")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(Theme.text3.opacity(0.6))
+                }
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    // The filled image spills past its frame, and clipping doesn't clip taps: on a wide
-                    // screen the Home banner swallowed the account button above it.
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
         .task(id: url) {
             guard let url else {
                 image = nil

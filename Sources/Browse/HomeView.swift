@@ -10,6 +10,14 @@ enum BrowseRoute: Hashable {
     case collection(HomeCollection)
     /// Every library as a grid, where their order can be changed.
     case libraries
+
+    /// The same item or library, even if its details differ between two taps.
+    func isSamePage(as other: BrowseRoute) -> Bool {
+        switch (self, other) {
+        case (.item(let a), .item(let b)), (.library(let a), .library(let b)): return a.id == b.id
+        default: return self == other
+        }
+    }
 }
 
 /// The Home rows that have a "see all" page.
@@ -80,11 +88,13 @@ final class BrowseNavigator {
     /// Posted (with "id" and "name") to open a show's page on the Home tab, from another tab.
     static let openSeriesNotification = Notification.Name("openSeriesOnHome")
 
-    var path: [BrowseRoute] = []
-
-    /// Opens a page unless it is already the one on top (a doubled tap must not stack two copies).
-    func push(_ route: BrowseRoute) {
-        if path.last != route { path.append(route) }
+    var path: [BrowseRoute] = [] {
+        // One tap can arrive as two pushes; two copies of a page must never stack.
+        didSet {
+            guard path.count > oldValue.count, path.count > 1,
+                  path[path.count - 1].isSamePage(as: path[path.count - 2]) else { return }
+            path.removeLast()
+        }
     }
 
     func openSeries(id: String, name: String?) {
@@ -183,6 +193,8 @@ struct HomeView: View {
             LazyVStack(alignment: .leading, spacing: 26) {
                 header
                     .id("top")
+                    // Above everything below, so nothing can take the account button's taps.
+                    .zIndex(1)
                 if let errorMessage {
                     ErrorState(message: errorMessage) {
                         await load()
@@ -304,6 +316,7 @@ struct HomeView: View {
             .frame(height: 236 * Metrics.scale)
             .overlay {
                 RemoteImage(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1000))
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {

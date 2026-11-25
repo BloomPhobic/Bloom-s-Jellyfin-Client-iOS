@@ -48,7 +48,7 @@ struct LibraryView: View {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(items, id: \.id) { item in
                     Button {
-                        navigator.push(.item(item))
+                        navigator.path.append(.item(item))
                     } label: {
                         PosterCard(item: item, api: api)
                     }

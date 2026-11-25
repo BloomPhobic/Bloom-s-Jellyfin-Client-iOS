@@ -61,6 +61,10 @@ struct DownloadsView: View {
             }
         }
         .onChange(of: resetToken) { path = [] }
+        // One tap can arrive as two pushes; two copies of a page must never stack.
+        .onChange(of: path) { old, new in
+            if new.count > old.count, new.count > 1, new[new.count - 1] == new[new.count - 2] { path.removeLast() }
+        }
         .onAppear { freeBytes = DownloadFiles.freeBytes }
         .onChange(of: everyone.count) { freeBytes = DownloadFiles.freeBytes }
         .fullScreenCover(item: $playback) { session in
