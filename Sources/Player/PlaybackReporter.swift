@@ -10,7 +10,8 @@ extension Notification.Name {
 /// with other clients. The server marks an item watched when it stops near the end.
 @MainActor
 final class PlaybackReporter {
-    private let client: JellyfinClient
+    private let api: LibraryAPI
+    private var client: JellyfinClient { api.client }
     private let itemID: String
     private let mediaSourceID: String?
     private let playSessionID = UUID().uuidString
@@ -22,8 +23,8 @@ final class PlaybackReporter {
 
     private static let interval: TimeInterval = 10
 
-    init(client: JellyfinClient, itemID: String, mediaSourceID: String?) {
-        self.client = client
+    init(api: LibraryAPI, itemID: String, mediaSourceID: String?) {
+        self.api = api
         self.itemID = itemID
         self.mediaSourceID = mediaSourceID
     }
@@ -58,11 +59,13 @@ final class PlaybackReporter {
         body.playSessionID = playSessionID
         body.positionTicks = Self.ticks(lastPosition)
         let position = lastPosition
-        let client = client
+        let api = api
+        let itemID = itemID
         Task {
             do {
-                try await client.send(Paths.reportPlaybackStopped(body))
+                try await api.client.send(Paths.reportPlaybackStopped(body))
                 AppLog.shared.log("Progress saved at \(ItemDetailView.timeText(position))")
+                await api.clearWatchLater(finished: itemID, position: position)
             } catch {
                 AppLog.shared.log("Couldn't save progress: \(error.localizedDescription)", level: .warning)
             }

@@ -747,6 +747,7 @@ final class DownloadStore {
                 } else {
                     try await Self.sendProgress(client: client, record: record, position: position)
                     AppLog.shared.log("Offline progress for \(Self.title(record.item)) sent: \(ItemDetailView.timeText(position))")
+                    await api.clearWatchLater(finished: record.id, position: position)
                 }
                 records[record.id]?.needsSync = false
                 records[record.id]?.item.userData = (try? await api.item(record.id))?.userData ?? server.userData

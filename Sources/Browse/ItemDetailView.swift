@@ -430,7 +430,7 @@ struct RowLabel: View {
     }
 }
 
-/// Watched and Favourite tiles. Updates the item with what the server returns.
+/// Watched, Favourite and Watch later tiles. Updates the item with what the server returns.
 struct UserDataTiles: View {
     let api: LibraryAPI
     @Binding var item: BaseItemDto
@@ -458,9 +458,19 @@ struct UserDataTiles: View {
         .buttonStyle(TileButtonStyle(isOn: item.isFavorite))
         .accessibilityValue(item.isFavorite ? "On" : "Off")
         .disabled(isUpdating)
+
+        Button {
+            Task { await update(watchLater: !item.isWatchLater) }
+        } label: {
+            TileLabel(title: "Watch later", systemImage: item.isWatchLater ? "bookmark.fill" : "bookmark")
+                .symbolEffect(.bounce, value: item.isWatchLater)
+        }
+        .buttonStyle(TileButtonStyle(isOn: item.isWatchLater))
+        .accessibilityValue(item.isWatchLater ? "On" : "Off")
+        .disabled(isUpdating)
     }
 
-    private func update(played: Bool? = nil, favorite: Bool? = nil) async {
+    private func update(played: Bool? = nil, favorite: Bool? = nil, watchLater: Bool? = nil) async {
         guard let id = item.id else { return }
         isUpdating = true
         defer { isUpdating = false }
@@ -474,6 +484,11 @@ struct UserDataTiles: View {
                 let data = try await api.setFavorite(favorite, itemID: id)
                 withAnimation(.easeInOut(duration: 0.2)) { item.userData = data }
                 AppLog.shared.log("\(favorite ? "Added" : "Removed") \(item.name ?? id) \(favorite ? "to" : "from") favourites")
+            }
+            if let watchLater {
+                let data = try await api.setWatchLater(watchLater, itemID: id)
+                withAnimation(.easeInOut(duration: 0.2)) { item.userData = data }
+                AppLog.shared.log("\(watchLater ? "Added" : "Removed") \(item.name ?? id) \(watchLater ? "to" : "from") Watch later")
             }
             onChange?()
         } catch {

@@ -95,7 +95,7 @@ final class PlaybackSession: Identifiable {
         isPlayingDownload = url.isFileURL
         lastGoodPosition = startSeconds
         mediaSourceID = source.id
-        reporter = offline ? nil : PlaybackReporter(client: api.client, itemID: itemID, mediaSourceID: source.id)
+        reporter = offline ? nil : PlaybackReporter(api: api, itemID: itemID, mediaSourceID: source.id)
         Self.logPlay(item: item, source: source, startSeconds: startSeconds, local: url.isFileURL)
         player.externalSubtitles = externalSubtitles(for: item, source: source)
         let languageKey = LanguagePreference.key(for: item)
@@ -415,7 +415,7 @@ final class PlaybackSession: Identifiable {
         thumbnails = nil
         nextEpisode = nil
         nextCardDismissed = false
-        reporter = isOffline ? nil : PlaybackReporter(client: api.client, itemID: episodeID, mediaSourceID: source.id)
+        reporter = isOffline ? nil : PlaybackReporter(api: api, itemID: episodeID, mediaSourceID: source.id)
         currentURL = url
         isPlayingDownload = url.isFileURL
         lastGoodPosition = start
@@ -432,14 +432,14 @@ final class PlaybackSession: Identifiable {
         api = newAPI
         if isPlayingDownload {
             // The file is on the phone; only the progress reports need the new address.
-            reporter = PlaybackReporter(client: newAPI.client, itemID: itemID, mediaSourceID: mediaSourceID)
+            reporter = PlaybackReporter(api: newAPI, itemID: itemID, mediaSourceID: mediaSourceID)
             return
         }
         guard let url = newAPI.streamURL(itemID: itemID, mediaSourceID: mediaSourceID) else { return }
         let position = player.position
         AppLog.shared.log("Address changed during playback; reopening from \(newAPI.client.configuration.url.absoluteString) at \(ItemDetailView.timeText(position))")
         // The old address may be gone, so start reporting through the new one.
-        reporter = PlaybackReporter(client: newAPI.client, itemID: itemID, mediaSourceID: mediaSourceID)
+        reporter = PlaybackReporter(api: newAPI, itemID: itemID, mediaSourceID: mediaSourceID)
         currentURL = url
         retryCount = 0
         player.externalSubtitles = externalSubtitles(for: item, source: item.mediaSources?.first { $0.id == mediaSourceID })

@@ -239,13 +239,13 @@ struct LibraryAPI {
 
     /// Titles in your library like this one. The server picks them by shared genres, tags,
     /// studios and people, and closeness in year.
-    /// Favourite movies, shows and episodes, one page at a time.
-    func favourites(startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
+    /// Movies, shows and episodes marked as favourites (`.isFavorite`) or for later (`.likes`), one page at a time.
+    func marked(_ filter: ItemFilter, startIndex: Int, limit: Int) async throws -> (items: [BaseItemDto], total: Int) {
         var parameters = Paths.GetItemsParameters()
         parameters.userID = userID
         parameters.isRecursive = true
         parameters.includeItemTypes = [.movie, .series, .episode]
-        parameters.filters = [.isFavorite]
+        parameters.filters = [filter]
         parameters.sortBy = [.sortName]
         parameters.startIndex = startIndex
         parameters.limit = limit
@@ -307,7 +307,38 @@ struct LibraryAPI {
         let request = played
             ? Paths.markPlayedItem(itemID: itemID, userID: userID)
             : Paths.markUnplayedItem(itemID: itemID, userID: userID)
+        let data = try await client.send(request).value
+        guard played else { return data }
+        return await clearWatchLater(finished: itemID) ?? data
+    }
+
+    /// Watch later is Jellyfin's per-user "like" mark, which is separate from favourites.
+    func setWatchLater(_ later: Bool, itemID: String) async throws -> UserItemDataDto {
+        let request = later
+            ? Paths.updateUserItemRating(itemID: itemID, userID: userID, isLikes: true)
+            : Paths.deleteUserItemRating(itemID: itemID, userID: userID)
         return try await client.send(request).value
+    }
+
+    /// A watched title leaves Watch later, and so does its show once every episode is watched.
+    /// `position` is where playback stopped, which must be near the end (a rewatch is already "watched");
+    /// nil means it was marked watched by hand. Returns the item's new user data if it was removed.
+    @discardableResult
+    func clearWatchLater(finished itemID: String, position: Double? = nil) async -> UserItemDataDto? {
+        guard let found = try? await item(itemID), found.isPlayed else { return nil }
+        if let position, position < Double(found.runTimeTicks ?? 0) / 10_000_000 * 0.9 { return nil }
+        do {
+            if let seriesID = found.seriesID {
+                let series = try await item(seriesID)
+                if series.isPlayed && series.isWatchLater {
+                    _ = try await setWatchLater(false, itemID: seriesID)
+                }
+            }
+            return found.isWatchLater ? try await setWatchLater(false, itemID: itemID) : nil
+        } catch {
+            AppLog.shared.log("Couldn't remove \(found.name ?? itemID) from Watch later: \(error.localizedDescription)", level: .warning)
+            return nil
+        }
     }
 
     func setFavorite(_ favorite: Bool, itemID: String) async throws -> UserItemDataDto {
@@ -521,4 +552,5 @@ extension BaseItemDto {
 
     var isPlayed: Bool { userData?.isPlayed == true }
     var isFavorite: Bool { userData?.isFavorite == true }
+    var isWatchLater: Bool { userData?.isLikes == true }
 }

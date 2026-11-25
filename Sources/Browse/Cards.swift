@@ -103,6 +103,9 @@ struct RemoteImage: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                    // The filled image spills past its frame, and clipping doesn't clip taps: on a wide
+                    // screen the Home banner swallowed the account button above it.
+                    .allowsHitTesting(false)
                     .transition(.opacity)
             }
         }

@@ -101,6 +101,17 @@ struct SeriesView: View {
                     .buttonStyle(CircleButtonStyle(size: 36))
                     .accessibilityLabel(series.isFavorite ? "Remove from favourites" : "Add to favourites")
 
+                    Button {
+                        Task { await setWatchLater(!series.isWatchLater) }
+                    } label: {
+                        Image(systemName: series.isWatchLater ? "bookmark.fill" : "bookmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(series.isWatchLater ? Theme.accent : Theme.text)
+                            .symbolEffect(.bounce, value: series.isWatchLater)
+                    }
+                    .buttonStyle(CircleButtonStyle(size: 36))
+                    .accessibilityLabel(series.isWatchLater ? "Remove from Watch later" : "Add to Watch later")
+
                     Menu {
                         Button {
                             Task { await setPlayed(!series.isPlayed) }
@@ -674,6 +685,16 @@ struct SeriesView: View {
             AppLog.shared.log("\(favorite ? "Added" : "Removed") \(series?.name ?? seriesID) \(favorite ? "to" : "from") favourites")
         } catch {
             AppLog.shared.log("Couldn't change favourite: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    private func setWatchLater(_ later: Bool) async {
+        do {
+            let data = try await api.setWatchLater(later, itemID: seriesID)
+            withAnimation(.easeInOut(duration: 0.2)) { series?.userData = data }
+            AppLog.shared.log("\(later ? "Added" : "Removed") \(series?.name ?? seriesID) \(later ? "to" : "from") Watch later")
+        } catch {
+            AppLog.shared.log("Couldn't change Watch later: \(error.localizedDescription)", level: .error)
         }
     }
 

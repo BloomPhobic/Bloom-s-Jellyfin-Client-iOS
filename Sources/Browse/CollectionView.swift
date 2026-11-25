@@ -1,7 +1,7 @@
 import JellyfinAPI
 import SwiftUI
 
-/// "See all" page for a Home row: everything in progress, everything up next, or the whole watch history.
+/// "See all" page for a Home row or list card: in progress, up next, watch history, favourites or Watch later.
 struct CollectionView: View {
     let api: LibraryAPI
     let collection: HomeCollection
@@ -46,6 +46,7 @@ struct CollectionView: View {
                     errorMessage == nil ? "Nothing here yet" : "Couldn't load",
                     systemImage: errorMessage == nil ? "film.stack" : "exclamationmark.triangle",
                     description: errorMessage.map { Text($0) }
+                        ?? (collection == .watchLater ? Text("Tap Watch later on a movie, show or episode to add it.") : nil)
                 )
             }
         }
@@ -53,7 +54,8 @@ struct CollectionView: View {
         .navigationBarTitleDisplayMode(.large)
         .refreshable { await Task { await reload() }.value }
         .task {
-            guard !hasLoaded else { return }
+            // Also runs on coming back from a title; the marked lists may have changed there.
+            guard !hasLoaded || isMarkedList else { return }
             await reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .playbackStopped)) { _ in
@@ -64,6 +66,8 @@ struct CollectionView: View {
         }
     }
 
+    private var isMarkedList: Bool { collection == .favourites || collection == .watchLater }
+
     private func reload() async {
         isLoading = true
         defer {
@@ -71,7 +75,8 @@ struct CollectionView: View {
             hasLoaded = true
         }
         do {
-            let page = try await fetch(startIndex: 0)
+            // As many as were showing, so the scroll position holds.
+            let page = try await fetch(startIndex: 0, limit: max(items.count, Self.pageSize))
             withAnimation(.easeOut(duration: 0.25)) {
                 items = page.items
                 total = page.total
@@ -86,7 +91,7 @@ struct CollectionView: View {
     }
 
     private func loadMore() async {
-        guard collection == .history || collection == .favourites, !isLoading, items.count < total else { return }
+        guard collection == .history || isMarkedList, !isLoading, items.count < total else { return }
         isLoading = true
         defer { isLoading = false }
         if let page = try? await fetch(startIndex: items.count) {
@@ -95,7 +100,7 @@ struct CollectionView: View {
         }
     }
 
-    private func fetch(startIndex: Int) async throws -> (items: [BaseItemDto], total: Int) {
+    private func fetch(startIndex: Int, limit: Int = CollectionView.pageSize) async throws -> (items: [BaseItemDto], total: Int) {
         switch collection {
         case .continueWatching:
             let found = try await api.resumeItems(limit: 100)
@@ -104,9 +109,11 @@ struct CollectionView: View {
             let found = try await api.nextUp(limit: 100)
             return (found, found.count)
         case .history:
-            return try await api.watchHistory(startIndex: startIndex, limit: Self.pageSize)
+            return try await api.watchHistory(startIndex: startIndex, limit: limit)
         case .favourites:
-            return try await api.favourites(startIndex: startIndex, limit: Self.pageSize)
+            return try await api.marked(.isFavorite, startIndex: startIndex, limit: limit)
+        case .watchLater:
+            return try await api.marked(.likes, startIndex: startIndex, limit: limit)
         }
     }
 }

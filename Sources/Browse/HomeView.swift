@@ -8,6 +8,8 @@ enum BrowseRoute: Hashable {
     /// A library showing only one genre (from the genre links on a movie or show page).
     case genre(library: BaseItemDto, genre: String)
     case collection(HomeCollection)
+    /// Every library as a grid, where their order can be changed.
+    case libraries
 }
 
 /// The Home rows that have a "see all" page.
@@ -16,6 +18,7 @@ enum HomeCollection: String, Hashable {
     case nextUp
     case history
     case favourites
+    case watchLater
 
     var title: String {
         switch self {
@@ -23,6 +26,7 @@ enum HomeCollection: String, Hashable {
         case .nextUp: return "Next up"
         case .history: return "Watch history"
         case .favourites: return "Favourites"
+        case .watchLater: return "Watch later"
         }
     }
 }
@@ -49,6 +53,8 @@ struct BrowseDestination: View {
             LibraryView(api: api, parent: library, genre: genre)
         case .collection(let collection):
             CollectionView(api: api, collection: collection)
+        case .libraries:
+            LibrariesView(api: api)
         case .item(let item):
             switch item.type {
             case .series:
@@ -152,9 +158,15 @@ struct HomeView: View {
     @State private var playback: PlaybackSession?
     @State private var isStartingPlayback = false
     @State private var isLoading = false
+    @AppStorage private var libraryOrder: String
 
-    /// Library types a video client can show.
-    private static let videoLibraries: Set<CollectionType> = [.movies, .tvshows, .boxsets, .homevideos, .musicvideos]
+    init(api: LibraryAPI, scrollTop: Int = 0) {
+        self.api = api
+        self.scrollTop = scrollTop
+        _libraryOrder = AppStorage(wrappedValue: "", LibraryEntry.orderKey(userID: api.userID))
+    }
+
+    private var libraryEntries: [LibraryEntry] { LibraryEntry.ordered(libraries, saved: libraryOrder) }
 
     /// The big card at the top: the most recent thing in progress, otherwise the first Next up.
     private var heroItem: BaseItemDto? { resume.first ?? nextUp.first }
@@ -199,7 +211,7 @@ struct HomeView: View {
                 if !recommended.isEmpty {
                     row("Recommended for you", items: recommended, wide: false)
                 }
-                ForEach(libraries, id: \.id) { library in
+                ForEach(libraryEntries.compactMap(\.serverLibrary), id: \.id) { library in
                     if let items = latest[library.id ?? ""], !items.isEmpty {
                         row("Recently added in \(library.name ?? "library")", items: items, wide: false)
                     }
@@ -350,46 +362,47 @@ struct HomeView: View {
     /// Big image cards for the libraries, in a horizontal scroll so they don't take much height.
     private var libraryCards: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(text: "Libraries")
+            seeAllHeader("Libraries", route: .libraries)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
-                    ForEach(libraries, id: \.id) { library in
-                        NavigationLink(value: BrowseRoute.library(library)) {
-                            LibraryCard(library: library, imageURL: api.imageURL(Artwork.landscape(library), maxWidth: 640))
+                    ForEach(libraryEntries) { entry in
+                        NavigationLink(value: entry.route) {
+                            LibraryEntryCard(entry: entry, api: api)
+                                .frame(width: 210 * Metrics.scale, height: 118 * Metrics.scale)
                         }
                         .buttonStyle(PressableStyle())
                     }
-                    NavigationLink(value: BrowseRoute.collection(.favourites)) {
-                        FavouritesCard()
-                    }
-                    .buttonStyle(PressableStyle())
                 }
                 .padding(.horizontal, 16)
             }
         }
     }
 
+    private func seeAllHeader(_ title: String, route: BrowseRoute) -> some View {
+        NavigationLink(value: route) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Theme.text3)
+                Spacer()
+                Text("See all")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            .padding(.horizontal, 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), see all")
+    }
+
     private func row(_ title: String, items: [BaseItemDto], wide: Bool, seeAll: HomeCollection? = nil) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let seeAll {
-                NavigationLink(value: BrowseRoute.collection(seeAll)) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Theme.text3)
-                        Spacer()
-                        Text("See all")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                    }
-                    .padding(.horizontal, 20)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(title), see all")
+                seeAllHeader(title, route: .collection(seeAll))
             } else {
                 SectionTitle(text: title)
             }
@@ -443,7 +456,7 @@ struct HomeView: View {
         defer { isLoading = false }
         async let resumeRequest = api.resumeItems()
         async let nextUpRequest = api.nextUp()
-        async let librariesRequest = api.libraries()
+        async let librariesRequest = api.videoLibraries()
         async let historyRequest = api.watchHistory()
         async let recommendedRequest = api.recommendations()
 
@@ -456,10 +469,7 @@ struct HomeView: View {
         do { newResume = try await resumeRequest } catch { AuthWatch.report(error); failures.append("continue watching: \(error.localizedDescription)") }
         do { newNextUp = try await nextUpRequest } catch { failures.append("next up: \(error.localizedDescription)") }
         do {
-            let all = try await librariesRequest
-            newLibraries = all.filter { library in
-                library.collectionType.map { Self.videoLibraries.contains($0) } ?? true
-            }
+            newLibraries = try await librariesRequest
         } catch {
             failures.append("libraries: \(error.localizedDescription)")
         }
@@ -498,78 +508,5 @@ struct HomeView: View {
             errorMessage = failures.count == 4 ? "The server didn't answer. Check your connection and try again." : nil
         }
         AppLog.shared.log("Home: \(resume.count) in progress, \(nextUp.count) next up, \(history.count) watched, \(libraries.count) libraries")
-    }
-}
-
-/// A library on Home: its image with the name and a type icon on a dark band.
-private struct FavouritesCard: View {
-    var body: some View {
-        Color.clear
-            .frame(width: 210 * Metrics.scale, height: 118 * Metrics.scale)
-            .background(Theme.raised)
-            .overlay {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 34))
-                    .foregroundStyle(Theme.accent.opacity(0.5))
-            }
-            .overlay(alignment: .bottomLeading) {
-                HStack(spacing: 7) {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                    Text("Favourites")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.background.opacity(0.75))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
-            .accessibilityElement(children: .combine)
-    }
-}
-
-private struct LibraryCard: View {
-    let library: BaseItemDto
-    let imageURL: URL?
-
-    var body: some View {
-        Color.clear
-            .frame(width: 210 * Metrics.scale, height: 118 * Metrics.scale)
-            .overlay {
-                RemoteImage(url: imageURL)
-            }
-            .overlay(alignment: .bottomLeading) {
-                HStack(spacing: 7) {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                    Text(library.name ?? "Library")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.background.opacity(0.75))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
-            .accessibilityElement(children: .combine)
-    }
-
-    private var icon: String {
-        switch library.collectionType {
-        case .movies: return "film"
-        case .tvshows: return "tv"
-        case .boxsets: return "square.stack"
-        case .homevideos: return "video"
-        case .musicvideos: return "music.note.tv"
-        default: return "folder"
-        }
     }
 }
