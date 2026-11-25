@@ -203,8 +203,6 @@ struct HomeView: View {
     @State private var isStartingPlayback = false
     @State private var isLoading = false
     @AppStorage private var libraryOrder: String
-    @State private var isDragging = false
-    @State private var showBloom = false
 
     init(api: LibraryAPI, scrollTop: Int = 0) {
         self.api = api
@@ -278,21 +276,8 @@ struct HomeView: View {
         .onChange(of: scrollTop) {
             withAnimation { proxy.scrollTo("top", anchor: .top) }
         }
-        .onScrollPhaseChange { _, phase in isDragging = phase == .interacting }
-        // Easter egg: dragged down about half the screen, well past what a refresh needs. The stretch
-        // is rubber-banded, so 22% of the height. A flick bouncing off the top doesn't count.
-        .onScrollGeometryChange(for: Bool.self) { scroll in
-            -(scroll.contentOffset.y + scroll.contentInsets.top) > scroll.containerSize.height * 0.22
-        } action: { _, farEnough in
-            if farEnough && isDragging { showBloom = true }
-        }
         }
         .background(Theme.background.ignoresSafeArea())
-        .overlay {
-            if showBloom {
-                BloomShower { showBloom = false }
-            }
-        }
         .navigationTitle("Home")
         .toolbar(.hidden, for: .navigationBar)
         .refreshable {
