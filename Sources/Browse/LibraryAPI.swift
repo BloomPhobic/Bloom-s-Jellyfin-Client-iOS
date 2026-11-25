@@ -336,7 +336,7 @@ struct LibraryAPI {
             }
             return found.isWatchLater ? try await setWatchLater(false, itemID: itemID) : nil
         } catch {
-            AppLog.shared.log("Couldn't remove \(found.name ?? itemID) from Watch later: \(error.localizedDescription)", level: .warning)
+            await AppLog.shared.log("Couldn't remove \(found.name ?? itemID) from Watch later: \(error.localizedDescription)", level: .warning)
             return nil
         }
     }
