@@ -12,7 +12,7 @@ struct CollectionView: View {
     @State private var hasLoaded = false
     @State private var errorMessage: String?
 
-    private static let pageSize = 60
+    private nonisolated static let pageSize = 60
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12, alignment: .top)]
 
     var body: some View {
