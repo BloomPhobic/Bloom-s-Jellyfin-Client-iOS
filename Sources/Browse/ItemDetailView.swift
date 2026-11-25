@@ -510,7 +510,7 @@ struct GenreLinks: View {
                 HStack(spacing: 6) {
                     ForEach(genres, id: \.self) { genre in
                         if let library {
-                            NavigationLink(value: BrowseRoute.genre(library: library, genre: genre)) {
+                            RouteLink(.genre(library: library, genre: genre)) {
                                 chip(genre, linked: true)
                             }
                             .buttonStyle(PressableStyle())

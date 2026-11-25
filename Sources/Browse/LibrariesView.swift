@@ -174,7 +174,7 @@ struct LibrariesView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(entries) { entry in
-                    NavigationLink(value: entry.route) {
+                    RouteLink(entry.route) {
                         LibraryEntryCard(entry: entry, api: api)
                             .aspectRatio(210.0 / 118.0, contentMode: .fit)
                     }

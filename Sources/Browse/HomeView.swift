@@ -18,6 +18,37 @@ enum BrowseRoute: Hashable {
         default: return self == other
         }
     }
+
+    var logName: String {
+        switch self {
+        case .item(let item): return item.name ?? "item"
+        case .library(let library): return library.name ?? "library"
+        case .genre(_, let genre): return genre
+        case .collection(let collection): return collection.title
+        case .libraries: return "Libraries"
+        }
+    }
+}
+
+/// A tappable card that opens a page. A button that adds to the path, because
+/// `NavigationLink(value:)` opened pages twice.
+struct RouteLink<Content: View>: View {
+    @Environment(BrowseNavigator.self) private var navigator
+    private let route: BrowseRoute
+    private let label: Content
+
+    init(_ route: BrowseRoute, @ViewBuilder label: () -> Content) {
+        self.route = route
+        self.label = label()
+    }
+
+    var body: some View {
+        Button {
+            navigator.path.append(route)
+        } label: {
+            label
+        }
+    }
 }
 
 /// The Home rows that have a "see all" page.
@@ -91,9 +122,12 @@ final class BrowseNavigator {
     var path: [BrowseRoute] = [] {
         // One tap can arrive as two pushes; two copies of a page must never stack.
         didSet {
-            guard path.count > oldValue.count, path.count > 1,
-                  path[path.count - 1].isSamePage(as: path[path.count - 2]) else { return }
-            path.removeLast()
+            if path.count > oldValue.count, path.count > 1, path[path.count - 1].isSamePage(as: path[path.count - 2]) {
+                AppLog.shared.log("Dropped a doubled page: \(path[path.count - 1].logName)")
+                path.removeLast()
+            } else if path != oldValue {
+                AppLog.shared.log("Open pages: \(path.isEmpty ? "none" : path.map(\.logName).joined(separator: " > "))")
+            }
         }
     }
 
@@ -354,7 +388,7 @@ struct HomeView: View {
                         }
                         .buttonStyle(PrimaryButtonStyle(height: 44))
                         .disabled(isStartingPlayback)
-                        NavigationLink(value: BrowseRoute.item(item)) {
+                        RouteLink(.item(item)) {
                             Image(systemName: "info")
                                 .font(.system(size: 17, weight: .semibold))
                         }
@@ -379,7 +413,7 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
                     ForEach(libraryEntries) { entry in
-                        NavigationLink(value: entry.route) {
+                        RouteLink(entry.route) {
                             LibraryEntryCard(entry: entry, api: api)
                                 .frame(width: 210 * Metrics.scale, height: 118 * Metrics.scale)
                         }
@@ -392,7 +426,7 @@ struct HomeView: View {
     }
 
     private func seeAllHeader(_ title: String, route: BrowseRoute) -> some View {
-        NavigationLink(value: route) {
+        RouteLink(route) {
             HStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 20, weight: .bold))
@@ -422,7 +456,7 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(items, id: \.id) { item in
-                        NavigationLink(value: BrowseRoute.item(item)) {
+                        RouteLink(.item(item)) {
                             if wide {
                                 LandscapeCard(item: item, api: api)
                                     .frame(width: 224 * Metrics.scale)

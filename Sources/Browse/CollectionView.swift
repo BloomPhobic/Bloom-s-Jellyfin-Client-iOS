@@ -19,7 +19,7 @@ struct CollectionView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 18) {
                 ForEach(items, id: \.id) { item in
-                    NavigationLink(value: BrowseRoute.item(item)) {
+                    RouteLink(.item(item)) {
                         LandscapeCard(item: item, api: api)
                     }
                     .buttonStyle(PressableStyle())

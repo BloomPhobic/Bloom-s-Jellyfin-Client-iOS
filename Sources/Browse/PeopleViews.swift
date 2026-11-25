@@ -15,7 +15,7 @@ struct CastRow: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(people) { credit in
-                            NavigationLink(value: BrowseRoute.item(credit.personItem)) {
+                            RouteLink(.item(credit.personItem)) {
                                 PersonCard(credit: credit, api: api)
                             }
                             .buttonStyle(PressableStyle())
@@ -147,7 +147,7 @@ struct SimilarRow: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 12) {
                             ForEach(items, id: \.id) { similar in
-                                NavigationLink(value: BrowseRoute.item(similar)) {
+                                RouteLink(.item(similar)) {
                                     PosterCard(item: similar, api: api)
                                         .frame(width: 108 * Metrics.scale)
                                 }
@@ -251,7 +251,7 @@ struct PersonView: View {
                 SectionTitle(text: title)
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(items, id: \.id) { item in
-                        NavigationLink(value: BrowseRoute.item(item)) {
+                        RouteLink(.item(item)) {
                             PosterCard(item: item, api: api)
                         }
                         .buttonStyle(PressableStyle())

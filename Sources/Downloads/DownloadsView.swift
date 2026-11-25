@@ -115,7 +115,9 @@ struct DownloadsView: View {
                 if !shows.isEmpty {
                     posterGrid("Shows") {
                         ForEach(shows) { show in
-                            NavigationLink(value: DownloadsRoute.show(id: show.id, name: show.name)) {
+                            Button {
+                                path.append(.show(id: show.id, name: show.name))
+                            } label: {
                                 ShowCard(show: show)
                             }
                             .buttonStyle(PressableStyle())
@@ -175,7 +177,9 @@ struct DownloadsView: View {
                     .foregroundStyle(Theme.text2)
             }
             Divider().overlay(Theme.line)
-            NavigationLink(value: DownloadsRoute.active) {
+            Button {
+                path.append(.active)
+            } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         ActiveDownloadsLink(records: unfinished, userID: store.session?.userID)

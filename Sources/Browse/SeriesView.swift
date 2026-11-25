@@ -285,7 +285,7 @@ struct SeriesView: View {
                             }
                         }
                         if !selecting {
-                            NavigationLink(value: BrowseRoute.item(episode)) {
+                            RouteLink(.item(episode)) {
                                 Image(systemName: "info.circle")
                                     .font(.system(size: 20))
                                     .foregroundStyle(Theme.text2)

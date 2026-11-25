@@ -20,9 +20,17 @@ struct SearchView: View {
     var body: some View {
         List {
             ForEach(results, id: \.id) { item in
-                NavigationLink(value: BrowseRoute.item(item)) {
-                    SearchRow(item: item, api: api)
+                RouteLink(.item(item)) {
+                    HStack(spacing: 8) {
+                        SearchRow(item: item, api: api)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text3)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .listRowBackground(Color.clear)
             }
             if requestsOn, !results.isEmpty {
