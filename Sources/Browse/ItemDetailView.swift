@@ -144,6 +144,7 @@ struct ItemDetailView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 24)
                 .padding(.bottom, 24)
+                .readableWidth()
         }
     }
 

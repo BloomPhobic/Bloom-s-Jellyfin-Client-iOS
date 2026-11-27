@@ -347,9 +347,11 @@ struct HomeView: View {
         let detail = [isEpisode ? item.name : nil, Self.timeLeft(item)].compactMap { $0 }.joined(separator: " · ")
 
         return Color.clear
-            .frame(height: 236 * Metrics.scale)
+            .frame(height: Metrics.isPad ? 400 : 236)
             .overlay {
-                RemoteImage(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1000))
+                // A wide iPad banner crops a lot: keep the top, where faces usually are.
+                RemoteImage(url: api.imageURL(Artwork.backdrop(item) ?? Artwork.landscape(item), maxWidth: 1000),
+                            alignment: Metrics.isPad ? .top : .center)
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {

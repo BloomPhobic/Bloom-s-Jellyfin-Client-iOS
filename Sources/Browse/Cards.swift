@@ -81,11 +81,14 @@ final class ImageCache {
 /// An image from the server that fills its frame. Shows a grey placeholder until it loads.
 struct RemoteImage: View {
     let url: URL?
+    /// Which part of the picture stays when it is cropped to fit.
+    let alignment: Alignment
 
     @State private var image: UIImage?
 
-    init(url: URL?) {
+    init(url: URL?, alignment: Alignment = .center) {
         self.url = url
+        self.alignment = alignment
         _image = State(initialValue: url.flatMap { ImageCache.shared.cached($0) })
     }
 
@@ -102,6 +105,8 @@ struct RemoteImage: View {
                         .font(.system(size: 22, weight: .light))
                         .foregroundStyle(Theme.text3.opacity(0.6))
                 }
+            }
+            .overlay(alignment: alignment) {
                 if let image {
                     Image(uiImage: image)
                         .resizable()
