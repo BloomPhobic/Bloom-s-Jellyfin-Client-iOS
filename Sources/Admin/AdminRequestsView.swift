@@ -5,25 +5,10 @@ import SwiftUI
 struct AdminRequestsView: View {
     @Environment(SessionStore.self) private var store
     @State private var requests: [SeerrMyRequest] = []
-    @State private var filter: Filter = .pending
+    @State private var filter: SeerrMyRequest.Filter = .pending
     @State private var note: String?
     @State private var loaded = false
     @State private var message: String?
-
-    private enum Filter: String, CaseIterable {
-        case pending = "Pending"
-        case approved = "Approved"
-        case denied = "Denied"
-
-        /// Seerr: 2 approved, 3 declined; anything else counts as pending.
-        func matches(_ status: Int) -> Bool {
-            switch self {
-            case .pending: return status != 2 && status != 3
-            case .approved: return status == 2
-            case .denied: return status == 3
-            }
-        }
-    }
 
     private var seerr: SeerrClient? { SeerrClient(userID: store.session?.userID) }
     private var shown: [SeerrMyRequest] { requests.filter { filter.matches($0.status) } }
@@ -46,7 +31,7 @@ struct AdminRequestsView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if !requests.isEmpty {
                 Picker("", selection: $filter) {
-                    ForEach(Filter.allCases, id: \.self) { option in
+                    ForEach(SeerrMyRequest.Filter.allCases, id: \.self) { option in
                         Text("\(option.rawValue) (\(requests.filter { option.matches($0.status) }.count))").tag(option)
                     }
                 }

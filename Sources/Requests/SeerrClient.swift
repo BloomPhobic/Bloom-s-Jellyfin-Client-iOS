@@ -49,7 +49,7 @@ struct SeerrSeason: Decodable, Hashable {
 
 struct SeerrMyRequest: Identifiable {
     let id: Int
-    /// Seerr request status: 1 pending, 2 approved, 3 declined.
+    /// Seerr request status: 1 pending, 2 approved, 3 declined, 4 failed, 5 completed.
     let status: Int
     let title: String
     let posterPath: String?
@@ -57,6 +57,22 @@ struct SeerrMyRequest: Identifiable {
     let tmdbID: Int?
 
     var posterURL: URL? { SeerrClient.image(posterPath, "w185") }
+
+    /// The tabs of both request lists.
+    enum Filter: String, CaseIterable {
+        case pending = "Pending"
+        case approved = "Approved"
+        case denied = "Denied"
+
+        /// Failed and completed were approved first. A status newer than this app knows counts as pending.
+        func matches(_ status: Int) -> Bool {
+            switch self {
+            case .pending: return ![2, 3, 4, 5].contains(status)
+            case .approved: return [2, 4, 5].contains(status)
+            case .denied: return status == 3
+            }
+        }
+    }
 
     /// What the detail page needs to open this title.
     var asResult: SeerrResult? {

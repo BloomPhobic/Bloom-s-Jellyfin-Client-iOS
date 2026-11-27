@@ -507,23 +507,8 @@ struct MyRequestsView: View {
     @State private var needsLogin = false
     @State private var showLogin = false
     @State private var detailTarget: SeerrResult?
-    @State private var filter: Filter = .pending
+    @State private var filter: SeerrMyRequest.Filter = .pending
     @State private var pickedInitialFilter = false
-
-    private enum Filter: String, CaseIterable {
-        case pending = "Pending"
-        case approved = "Approved"
-        case denied = "Denied"
-
-        /// Seerr: 2 approved, 3 declined; anything else (pending, or a status newer than this app knows) counts as pending.
-        func matches(_ status: Int) -> Bool {
-            switch self {
-            case .pending: return status != 2 && status != 3
-            case .approved: return status == 2
-            case .denied: return status == 3
-            }
-        }
-    }
 
     private var client: SeerrClient? { SeerrClient(userID: store.session?.userID) }
     private var shown: [SeerrMyRequest] { requests.filter { filter.matches($0.status) } }
@@ -551,7 +536,7 @@ struct MyRequestsView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if !requests.isEmpty {
                 Picker("", selection: $filter) {
-                    ForEach(Filter.allCases, id: \.self) { option in
+                    ForEach(SeerrMyRequest.Filter.allCases, id: \.self) { option in
                         Text("\(option.rawValue) (\(requests.filter { option.matches($0.status) }.count))").tag(option)
                     }
                 }
@@ -614,7 +599,7 @@ struct MyRequestsView: View {
             // First load: open on the first tab that has something in it.
             if !pickedInitialFilter {
                 pickedInitialFilter = true
-                if shown.isEmpty, let first = Filter.allCases.first(where: { option in requests.contains { option.matches($0.status) } }) {
+                if shown.isEmpty, let first = SeerrMyRequest.Filter.allCases.first(where: { option in requests.contains { option.matches($0.status) } }) {
                     filter = first
                 }
             }
